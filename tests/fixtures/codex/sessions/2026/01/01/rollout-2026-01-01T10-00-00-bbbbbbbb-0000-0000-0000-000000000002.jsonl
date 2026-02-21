@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T10:00:00.000Z","type":"session_meta","payload":{"id":"bbbbbbbb-0000-0000-0000-000000000002","timestamp":"2026-01-01T10:00:00.000Z","cwd":"/test/codex-project","originator":"codex_cli_rs","cli_version":"0.0.0","instructions":"do stuff"}}
+{"timestamp":"2026-01-01T10:01:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex session about oranges"}]}}
+{"timestamp":"2026-01-01T10:01:30.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I will help with oranges."}]}}
+{"timestamp":"2026-01-01T10:02:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"codex session about oranges","images":[]}}

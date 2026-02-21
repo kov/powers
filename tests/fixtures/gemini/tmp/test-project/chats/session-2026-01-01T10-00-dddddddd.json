@@ -1,0 +1,26 @@
+{
+  "sessionId": "dddddddd-0000-0000-0000-000000000004",
+  "projectHash": "test-project",
+  "startTime": "2026-01-01T10:00:00.000Z",
+  "lastUpdated": "2026-01-01T10:05:00.000Z",
+  "messages": [
+    {
+      "id": "gm-1",
+      "timestamp": "2026-01-01T10:01:00.000Z",
+      "type": "user",
+      "content": "gemini session about grapes"
+    },
+    {
+      "id": "gm-2",
+      "timestamp": "2026-01-01T10:01:30.000Z",
+      "type": "gemini",
+      "content": "Here are some grapes."
+    },
+    {
+      "id": "gm-info",
+      "timestamp": "2026-01-01T10:02:00.000Z",
+      "type": "info",
+      "content": "context compressed"
+    }
+  ]
+}

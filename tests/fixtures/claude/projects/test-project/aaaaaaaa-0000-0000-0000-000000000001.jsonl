@@ -1,0 +1,8 @@
+{"type":"system","sessionId":"aaaaaaaa-0000-0000-0000-000000000001","cwd":"/test/project","gitBranch":"main","timestamp":"2026-01-01T10:00:00.000Z","uuid":"sys-1","version":"2.0"}
+{"type":"user","message":{"role":"user","content":"first message about apples"},"timestamp":"2026-01-01T10:01:00.000Z","uuid":"u-1","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I see apples. Let me help."}]},"timestamp":"2026-01-01T10:01:30.000Z","uuid":"a-1","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"user","message":{"role":"user","content":"now talk about bananas"},"timestamp":"2026-01-01T10:02:00.000Z","uuid":"u-2","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"bash","input":{"command":"echo bananas"}},{"type":"text","text":"Here are the bananas."}]},"timestamp":"2026-01-01T10:02:30.000Z","uuid":"a-2","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"bananas output"}]},"timestamp":"2026-01-01T10:03:00.000Z","uuid":"u-3","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done. Now about citrus fruits."}]},"timestamp":"2026-01-01T10:03:30.000Z","uuid":"a-3","sessionId":"aaaaaaaa-0000-0000-0000-000000000001"}
+{"type":"progress","uuid":"p-1","data":"skip me"}
