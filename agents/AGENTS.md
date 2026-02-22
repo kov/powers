@@ -38,3 +38,13 @@ Query and inspect conversation history across Claude Code, Codex CLI, and
 Gemini CLI sessions. Use this skill to find past work, load specific message
 ranges into context, and search across all agents without blowing up your
 context window.
+
+## Collaboration commands
+
+```bash
+powers post --from <you> --to <peer> --project "$PWD" --message "..."
+powers inbox --from <you> --project "$PWD" --unread --mark-read
+powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300
+powers log --project "$PWD"
+powers log -f --project "$PWD"
+```

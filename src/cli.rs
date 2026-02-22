@@ -22,6 +22,8 @@ pub enum Commands {
     Post(PostArgs),
     /// Read collaboration messages from the project stream
     Inbox(InboxArgs),
+    /// Inspect collaboration stream with per-agent read status
+    Log(LogArgs),
     /// Watch a live agent session, optionally with collaboration inbox updates
     Watch(WatchArgs),
 }
@@ -241,6 +243,53 @@ pub struct WatchArgs {
     /// Wrap output at this width (default: terminal width)
     #[arg(long)]
     pub width: Option<usize>,
+}
+
+#[derive(clap::Args)]
+pub struct LogArgs {
+    /// Project path (defaults to current working directory)
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
+    /// Show only the last N messages
+    #[arg(short = 'n', long = "last", default_value = "50")]
+    pub last: Option<usize>,
+
+    /// Keep tailing the stream and refresh in-place when stdout is a TTY
+    #[arg(short = 'f', long)]
+    pub follow: bool,
+
+    /// Expand full message body lines
+    #[arg(long)]
+    pub expand: bool,
+
+    /// Only show messages at or after this date (YYYY-MM-DD)
+    #[arg(long)]
+    pub since: Option<String>,
+
+    /// Filter by kind
+    #[arg(long)]
+    pub kind: Option<String>,
+
+    /// Filter by sender identity
+    #[arg(long)]
+    pub sender: Option<String>,
+
+    /// Filter by recipient identity. Use '*' for broadcast messages only.
+    #[arg(long)]
+    pub to: Option<String>,
+
+    /// Wrap output at this width (default: terminal width)
+    #[arg(long)]
+    pub width: Option<usize>,
+
+    /// Poll interval floor in milliseconds for --follow mode
+    #[arg(long)]
+    pub poll_ms: Option<u64>,
+
+    /// Disable ANSI colors
+    #[arg(long)]
+    pub no_color: bool,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]

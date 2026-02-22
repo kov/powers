@@ -19,6 +19,7 @@ fn main() {
         Commands::Info(args) => commands::info::run(args),
         Commands::Post(args) => commands::post::run(args),
         Commands::Inbox(args) => commands::inbox::run(args),
+        Commands::Log(args) => commands::log::run(args),
         Commands::Watch(args) => commands::watch::run(args),
     };
 

@@ -152,6 +152,30 @@ powers watch   <SESSION> [--inbox-for AGENT] [--project PATH] [--no-tool-calls] 
 With `--inbox-for`, it also prints inbox updates in the same loop.
 (Gemini sessions are not supported — whole-JSON format).
 
+### Inspecting the collaboration stream
+
+Use `powers log` when you want an observer view of all collaboration messages
+with per-agent read status.
+
+```bash
+powers log --project "$PWD"
+powers log --project "$PWD" --sender claude
+powers log --project "$PWD" --kind review
+powers log --project "$PWD" --to codex
+powers log --project "$PWD" --to '*'
+powers log --project "$PWD" --since 2026-02-22
+```
+
+For live monitoring:
+```bash
+powers log -f --project "$PWD"
+```
+
+For full message bodies instead of single-line previews:
+```bash
+powers log --project "$PWD" --expand
+```
+
 ### Boundary polling
 
 Neither agent can self-wake between turns. Check the inbox explicitly at the

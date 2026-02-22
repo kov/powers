@@ -102,6 +102,12 @@ powers inbox --from claude --project "$PWD" --unread --mark-read --wait --timeou
 See `skills/use-powers/SKILL.md` for full guidance including timeout calibration,
 handling interim messages, and what to include in completion notices.
 
+Inspect the collaboration stream with read-status annotations:
+```bash
+powers log --project PATH       # inspect stream with per-agent read status
+powers log -f --project PATH    # follow in-place, refreshes as cursors advance
+```
+
 ## Testing
 
 - Unit tests live in the same file as the code they test (`#[cfg(test)]`)

@@ -10,8 +10,15 @@ pub fn terminal_width() -> usize {
         .unwrap_or(100)
 }
 
+/// Get the current terminal height, with fallback to 30.
+pub fn terminal_height() -> usize {
+    terminal_size::terminal_size()
+        .map(|(_, h)| h.0 as usize)
+        .unwrap_or(30)
+}
+
 /// Truncate a string to fit within max_len, appending "…" if needed.
-fn truncate(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
@@ -279,7 +286,7 @@ fn print_wrapped(text: &str, width: usize, prefix: &str) {
     }
 }
 
-fn find_break(s: &str, max: usize) -> usize {
+pub(crate) fn find_break(s: &str, max: usize) -> usize {
     // Find last space before max chars
     if s.len() <= max {
         return s.len();
