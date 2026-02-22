@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::cli::{RoleFilter, ShowArgs};
 use crate::config::Config;
@@ -6,37 +6,12 @@ use crate::output;
 use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
 use crate::session::{Role, Session};
 
-use super::info::discover_all;
+use super::info::{discover_all, resolve_session_meta};
 
 pub fn run(args: &ShowArgs) -> Result<()> {
-    let prefix = &args.session;
-    if prefix.len() < 8 {
-        bail!("Session prefix must be at least 8 characters");
-    }
-
     let config = Config::load();
     let all_sessions = discover_all(&config)?;
-
-    let matches: Vec<_> = all_sessions
-        .iter()
-        .filter(|s| s.matches_prefix(prefix))
-        .collect();
-
-    let meta = match matches.len() {
-        0 => bail!("No session found matching prefix '{}'", prefix),
-        1 => matches[0],
-        _ => {
-            output::print_warn(&format!(
-                "Ambiguous prefix '{}' matches {} sessions:",
-                prefix,
-                matches.len()
-            ));
-            for m in &matches {
-                eprintln!("  {}", m.id);
-            }
-            bail!("Provide a longer prefix");
-        }
-    };
+    let meta = resolve_session_meta(&args.session, &all_sessions)?;
 
     // Load the full session
     let session = load_session(meta, &config)?;

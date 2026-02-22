@@ -18,6 +18,12 @@ pub enum Commands {
     Show(ShowArgs),
     /// Show session metadata
     Info(InfoArgs),
+    /// Post a collaboration message to the project stream
+    Post(PostArgs),
+    /// Read collaboration messages from the project stream
+    Inbox(InboxArgs),
+    /// Watch a live agent session, optionally with collaboration inbox updates
+    Watch(WatchArgs),
 }
 
 #[derive(clap::Args)]
@@ -117,6 +123,126 @@ pub struct InfoArgs {
     pub session: String,
 }
 
+#[derive(clap::Args)]
+pub struct PostArgs {
+    /// Sender identity (for example: claude, codex, gemini)
+    #[arg(long)]
+    pub from: String,
+
+    /// Optional recipient identity. If absent, message is broadcast.
+    #[arg(long)]
+    pub to: Option<String>,
+
+    /// Message kind (for example: note, status, review, handoff)
+    #[arg(long, default_value = "note")]
+    pub kind: String,
+
+    /// Project path (defaults to current working directory)
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
+    /// Related session ID or prefix
+    #[arg(long)]
+    pub session: Option<String>,
+
+    /// Message body. If omitted, stdin is used when piped.
+    #[arg(long)]
+    pub message: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct InboxArgs {
+    /// Reader identity (for example: claude, codex, gemini)
+    #[arg(long)]
+    pub from: String,
+
+    /// Project path (defaults to current working directory)
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
+    /// Show only messages not yet consumed by this reader for this project
+    #[arg(long)]
+    pub unread: bool,
+
+    /// Advance read cursor after printing messages
+    #[arg(long)]
+    pub mark_read: bool,
+
+    /// Keep tailing the stream for new messages
+    #[arg(long)]
+    pub follow: bool,
+
+    /// Filter by sender identity
+    #[arg(long)]
+    pub sender: Option<String>,
+
+    /// Filter by kind
+    #[arg(long)]
+    pub kind: Option<String>,
+
+    /// Filter by related session ID or prefix
+    #[arg(long)]
+    pub session: Option<String>,
+
+    /// Only show messages at or after this date (YYYY-MM-DD)
+    #[arg(long)]
+    pub since: Option<String>,
+
+    /// Show only the last N visible messages
+    #[arg(long)]
+    pub last: Option<usize>,
+
+    /// Output format
+    #[arg(long, default_value = "table", value_enum)]
+    pub format: InboxFormat,
+
+    /// Block until a message arrives (exit 0 with output) or timeout (exit 0, no output)
+    #[arg(long)]
+    pub wait: bool,
+
+    /// Internal timeout in seconds for --wait (0 = no timeout, rely on Bash tool timeout)
+    #[arg(long, default_value = "0")]
+    pub timeout: u64,
+}
+
+#[derive(clap::Args)]
+pub struct WatchArgs {
+    /// Session ID or prefix (≥8 chars)
+    pub session: String,
+
+    /// Optional reader identity for inbox stream (for example: codex, claude, gemini)
+    #[arg(long)]
+    pub inbox_for: Option<String>,
+
+    /// Project path for inbox stream (defaults to current working directory)
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
+    /// Hide tool calls and tool results from session stream
+    #[arg(long)]
+    pub no_tool_calls: bool,
+
+    /// Filter session messages by role
+    #[arg(long, default_value = "all", value_enum)]
+    pub role: RoleFilter,
+
+    /// Poll interval baseline in milliseconds (default: 750)
+    #[arg(long)]
+    pub poll_ms: Option<u64>,
+
+    /// Start from the beginning of the session rather than the current end
+    #[arg(long)]
+    pub from_start: bool,
+
+    /// Mark inbox messages as read while watching
+    #[arg(long)]
+    pub mark_read: bool,
+
+    /// Wrap output at this width (default: terminal width)
+    #[arg(long)]
+    pub width: Option<usize>,
+}
+
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum ToolFilter {
     Claude,
@@ -128,6 +254,12 @@ pub enum ToolFilter {
 pub enum OutputFormat {
     Table,
     Tsv,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum InboxFormat {
+    Table,
+    Json,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]

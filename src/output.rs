@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 
+use crate::collab::StreamMessage;
 use crate::session::{ContentPart, Message, MessageContent, SessionMeta};
 
 /// Get the current terminal width, with fallback to 100.
@@ -197,6 +198,49 @@ pub fn print_info(meta: &SessionMeta) {
     println!("File:         {}", meta.file_path.display());
 }
 
+pub fn print_post_result(msg: &StreamMessage) {
+    match &msg.to {
+        Some(to) => println!("posted {} from {} to {}", msg.id, msg.from, to),
+        None => println!("posted {} from {} to *", msg.id, msg.from),
+    }
+}
+
+pub fn print_inbox_message(msg: &StreamMessage) {
+    print_inbox_message_prefixed(msg, None);
+}
+
+pub fn print_inbox_message_prefixed(msg: &StreamMessage, source: Option<&str>) {
+    let ts = format_datetime(&msg.ts);
+    let to = msg.to.as_deref().unwrap_or("*");
+    if let Some(label) = source {
+        print!("[{label}] ")
+    }
+    if let Some(session) = msg.session_id.as_deref() {
+        println!(
+            "[{}] {} -> {} kind={} session={}",
+            ts, msg.from, to, msg.kind, session,
+        );
+    } else {
+        println!("[{}] {} -> {} kind={}", ts, msg.from, to, msg.kind);
+    }
+    for line in msg.body.lines() {
+        match source {
+            Some(label) => println!("[{label}]   {}", line),
+            None => println!("  {}", line),
+        }
+    }
+    match source {
+        Some(label) => println!("[{label}]"),
+        None => println!(),
+    }
+}
+
+pub fn print_inbox_message_json(msg: &StreamMessage) {
+    if let Ok(json) = serde_json::to_string(msg) {
+        println!("{json}");
+    }
+}
+
 /// Print an error message to stderr.
 pub fn print_error(msg: &str) {
     eprintln!("error: {}", msg);
@@ -247,8 +291,9 @@ fn find_break(s: &str, max: usize) -> usize {
     }
     // Try to find a space to break at
     if let Some(sp) = s[..pos].rfind(' ')
-        && sp > 0 {
-            return sp;
-        }
+        && sp > 0
+    {
+        return sp;
+    }
     pos
 }

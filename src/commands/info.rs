@@ -4,15 +4,24 @@ use crate::cli::InfoArgs;
 use crate::config::Config;
 use crate::output;
 use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
+use crate::session::SessionMeta;
 
 pub fn run(args: &InfoArgs) -> Result<()> {
-    let prefix = &args.session;
+    let config = Config::load();
+    let all_sessions = discover_all(&config)?;
+    let meta = resolve_session_meta(&args.session, &all_sessions)?;
+    output::print_info(meta);
+
+    Ok(())
+}
+
+pub(crate) fn resolve_session_meta<'a>(
+    prefix: &str,
+    all_sessions: &'a [SessionMeta],
+) -> Result<&'a SessionMeta> {
     if prefix.len() < 8 {
         bail!("Session prefix must be at least 8 characters");
     }
-
-    let config = Config::load();
-    let all_sessions = discover_all(&config)?;
 
     let matches: Vec<_> = all_sessions
         .iter()
@@ -21,9 +30,7 @@ pub fn run(args: &InfoArgs) -> Result<()> {
 
     match matches.len() {
         0 => bail!("No session found matching prefix '{}'", prefix),
-        1 => {
-            output::print_info(matches[0]);
-        }
+        1 => Ok(matches[0]),
         _ => {
             output::print_warn(&format!(
                 "Ambiguous prefix '{}' matches {} sessions:",
@@ -36,8 +43,6 @@ pub fn run(args: &InfoArgs) -> Result<()> {
             bail!("Provide a longer prefix");
         }
     }
-
-    Ok(())
 }
 
 pub fn discover_all(config: &Config) -> Result<Vec<crate::session::SessionMeta>> {

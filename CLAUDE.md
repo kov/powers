@@ -42,7 +42,7 @@ src/
   main.rs           — CLI dispatch only
   cli.rs            — clap Derive structs
   config.rs         — Path resolution (~/.claude etc.) with env var overrides:
-                       POWERS_CLAUDE_DIR, POWERS_CODEX_DIR, POWERS_GEMINI_DIR
+                       POWERS_CLAUDE_DIR, POWERS_CODEX_DIR, POWERS_GEMINI_DIR, POWERS_DIR
   session.rs        — Core types: SessionMeta, Session, Message, Role, Tool
   parsers/
     mod.rs          — Parser trait: discover() + load()
@@ -53,7 +53,7 @@ src/
     list.rs         — powers list
     search.rs       — powers search (streaming, ring-buffer context)
     show.rs         — powers show (slice logic)
-    info.rs         — powers info + shared discover_all()
+    info.rs         — powers info + shared discover_all() + resolve_session_meta()
   output.rs         — All terminal formatting
 
 CLAUDE.md             — This file (repo root)
@@ -61,7 +61,7 @@ agents/
   AGENTS.md         — Skill index (by name, not path)
 
 skills/
-  use-powers.md     — Skill: how agents use powers
+  use-powers/SKILL.md  — Skill: how agents use powers
 ```
 
 ## Adding a New Parser (4-Step Checklist)
@@ -79,6 +79,28 @@ skills/
    `discover_all()` / `discover_filtered()` / `load_session()`.
 
 Nothing else needs to change.
+
+## Agent Collaboration (powers post / inbox)
+
+The `powers post` and `powers inbox` commands use a project-scoped collaboration
+stream at `~/.powers/streams/{project-hash}.jsonl`. Always pass `--from` explicitly
+(multiple agents share the same user account).
+
+**Boundary polling — do this at the start of each task and before your final response:**
+```bash
+powers inbox --from claude --unread --mark-read --project /path/to/project
+```
+
+**Ping-pong — for active collaboration where you need a reply before continuing:**
+```bash
+# Post a task or question
+powers post --from claude --to codex --project "$PWD" --message "..."
+# Block until reply; empty stdout = timeout
+powers inbox --from claude --project "$PWD" --unread --mark-read --wait --timeout 300
+```
+
+See `skills/use-powers/SKILL.md` for full guidance including timeout calibration,
+handling interim messages, and what to include in completion notices.
 
 ## Testing
 

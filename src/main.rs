@@ -1,4 +1,5 @@
 mod cli;
+mod collab;
 mod commands;
 mod config;
 mod output;
@@ -16,6 +17,9 @@ fn main() {
         Commands::Search(args) => commands::search::run(args),
         Commands::Show(args) => commands::show::run(args),
         Commands::Info(args) => commands::info::run(args),
+        Commands::Post(args) => commands::post::run(args),
+        Commands::Inbox(args) => commands::inbox::run(args),
+        Commands::Watch(args) => commands::watch::run(args),
     };
 
     if let Err(e) = result {

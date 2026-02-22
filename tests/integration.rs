@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use tempfile::TempDir;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,12 @@ fn powers() -> Command {
     cmd.env("POWERS_CLAUDE_DIR", f.join("claude"))
         .env("POWERS_CODEX_DIR", f.join("codex"))
         .env("POWERS_GEMINI_DIR", f.join("gemini"));
+    cmd
+}
+
+fn powers_with_state_dir(state_dir: &TempDir) -> Command {
+    let mut cmd = powers();
+    cmd.env("POWERS_DIR", state_dir.path());
     cmd
 }
 
@@ -369,4 +376,269 @@ fn search_tool_filter_gemini() {
     assert!(out.status.success());
     assert!(s.contains("dddddddd"), "gemini session missing: {s}");
     assert!(s.contains("grapes"), "match missing: {s}");
+}
+
+// ── collaboration stream ─────────────────────────────────────────────────────
+
+#[test]
+fn post_and_inbox_show_targeted_and_broadcast_messages() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "post",
+            "--from",
+            "claude",
+            "--to",
+            "codex",
+            "--project",
+            "/test/project",
+            "--message",
+            "please review parser changes",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "post failed: {}", stdout(&out));
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "post",
+            "--from",
+            "claude",
+            "--project",
+            "/test/project",
+            "--message",
+            "build green",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "post failed: {}", stdout(&out));
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--unread",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "inbox failed: {s}");
+    assert!(
+        s.contains("please review parser changes"),
+        "targeted missing: {s}"
+    );
+    assert!(s.contains("build green"), "broadcast missing: {s}");
+}
+
+#[test]
+fn inbox_mark_read_advances_cursor() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "post",
+            "--from",
+            "claude",
+            "--to",
+            "codex",
+            "--project",
+            "/test/project",
+            "--message",
+            "one",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--unread",
+            "--mark-read",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("one"));
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--unread",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        stdout(&out).trim().is_empty(),
+        "expected no unread messages: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn inbox_last_limits_visible_output() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    for body in ["one", "two", "three"] {
+        let out = powers_with_state_dir(&state_dir)
+            .args([
+                "post",
+                "--from",
+                "claude",
+                "--to",
+                "codex",
+                "--project",
+                "/test/project",
+                "--message",
+                body,
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "post failed: {}", stdout(&out));
+    }
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--last",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "inbox failed: {s}");
+    assert!(s.contains("three"), "expected most recent message: {s}");
+    assert!(!s.contains("one"), "old message should be omitted: {s}");
+    assert!(!s.contains("two"), "old message should be omitted: {s}");
+}
+
+#[test]
+fn inbox_wait_exits_immediately_if_message_present() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    // Post a message first so the stream is non-empty
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "post",
+            "--from",
+            "claude",
+            "--to",
+            "codex",
+            "--project",
+            "/test/project",
+            "--message",
+            "ready when you are",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "post failed: {}", stdout(&out));
+
+    // inbox --wait should find the message immediately and exit with output
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--unread",
+            "--wait",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "inbox --wait failed: {s}");
+    assert!(
+        s.contains("ready when you are"),
+        "expected message in output: {s}"
+    );
+}
+
+#[test]
+fn inbox_wait_timeout_exits_with_no_output() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    // No messages posted — --wait --timeout 1 should exit in ~1s with no output
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--unread",
+            "--wait",
+            "--timeout",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "inbox --wait --timeout failed");
+    assert!(
+        stdout(&out).trim().is_empty(),
+        "expected no output on timeout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn inbox_format_json_outputs_jsonl_records() {
+    let state_dir = tempfile::tempdir().unwrap();
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "post",
+            "--from",
+            "claude",
+            "--to",
+            "codex",
+            "--kind",
+            "note",
+            "--project",
+            "/test/project",
+            "--message",
+            "json payload",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "post failed: {}", stdout(&out));
+
+    let out = powers_with_state_dir(&state_dir)
+        .args([
+            "inbox",
+            "--from",
+            "codex",
+            "--project",
+            "/test/project",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "inbox failed: {s}");
+
+    let line = s.lines().next().unwrap_or("");
+    let value: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(value["from"], "claude");
+    assert_eq!(value["to"], "codex");
+    assert_eq!(value["kind"], "note");
+    assert_eq!(value["body"], "json payload");
 }

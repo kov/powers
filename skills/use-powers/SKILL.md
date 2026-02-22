@@ -134,3 +134,136 @@ powers search "format_return_value" --tool codex --project /home/kov/Projects/pi
 # Load the surrounding context once you find the relevant message index
 powers show 019c7584 --from 42 --to 55
 ```
+
+## Agent Collaboration
+
+`powers` supports real-time messaging between agents via a project-scoped stream.
+Always pass `--from` explicitly — multiple agents share the same user account.
+
+```
+powers post    --from AGENT [--to AGENT] [--kind KIND] [--project PATH] --message TEXT
+powers inbox   --from AGENT [--project PATH] [--unread] [--mark-read] [--wait] [--timeout N] [--follow] [--since YYYY-MM-DD] [--last N] [--format table|json]
+powers watch   <SESSION> [--inbox-for AGENT] [--project PATH] [--no-tool-calls] [--role user|assistant|all] [--from-start] [--poll-ms N] [--mark-read] [--width N]
+```
+
+`post` appends a message to `~/.powers/streams/{project-hash}.jsonl`.
+`inbox` reads from it, filtered to messages addressed to you or broadcast.
+`watch` tails a live Claude or Codex session file as new messages are appended.
+With `--inbox-for`, it also prints inbox updates in the same loop.
+(Gemini sessions are not supported — whole-JSON format).
+
+### Boundary polling
+
+Neither agent can self-wake between turns. Check the inbox explicitly at the
+start of each task and before your final response — this catches messages that
+arrived while you were inactive:
+
+```bash
+powers inbox --from <you> --project "$PWD" --unread --mark-read
+```
+
+### Active collaboration (ping-pong within a turn)
+
+To wait for a reply *within* a turn, use `inbox --wait`. It blocks internally
+until a message arrives or a timeout expires, then exits. No background task or
+polling loop needed — just a single foreground Bash call.
+
+**`inbox --wait` behavior:**
+- Unread messages already exist → print and exit immediately (exit 0, stdout has content)
+- No messages → sleep-poll at 500 ms intervals until one arrives (exit 0, stdout has content)
+- `--timeout N` elapses → exit 0 with **no output** (empty stdout = timed out)
+- `--timeout 0` (default) = no internal timeout
+
+**Canonical pattern:**
+```bash
+powers post --from <you> --to <them> --project "$PWD" --message "..."
+powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout N
+```
+
+**Choosing `--timeout`:**
+
+| Task | Suggested timeout |
+|---|---|
+| Quick question or short patch | 120 s |
+| Medium implementation (a few files) | 300–600 s |
+| Large refactor or multi-step task | 600–900 s |
+
+**`--wait` returns on *any* new message** — a question, a status update, or a
+completion. After it returns, check whether the message is a completion or
+interim, then act accordingly:
+
+- Completion → review and reply with approval or feedback
+- Question or status → answer it, then call `--wait` again with a fresh timeout
+- Timeout (empty stdout) → optionally observe progress with `watch`, send a
+  heartbeat, then re-wait:
+
+```bash
+# Check if they're still active (background task, poll once with TaskOutput)
+powers watch <their-session> --no-tool-calls
+
+# Heartbeat so they know you're still around
+powers post --from <you> --to <them> --project "$PWD" --kind status \
+  --message "Still waiting — no reply yet, will wait another 5 min"
+
+powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300
+```
+
+> **Limit active wait to cases where you genuinely cannot proceed without a
+> reply.** For everything else, post and continue — check for replies via
+> boundary polling at your next turn.
+
+**For large contexts — reference a file path instead of embedding content.**
+Agents share the same filesystem, so there's no need to paste a full plan or
+diff into a message:
+```bash
+powers post --from claude --to codex --project "$PWD" \
+  --message "Plan at /home/kov/.claude/plans/my-plan.md — please implement"
+```
+
+**What to include in a completion message** (for the implementor):
+- Files changed (list each one)
+- Verification run (`cargo test`, linter, etc.)
+- Any deviations from the plan or open questions
+
+### Observability: watching a live session
+
+```bash
+# Tail a session (background task, then poll TaskOutput)
+powers watch <their-session> --no-tool-calls
+
+# Tail session + inbox together
+powers watch <their-session> --inbox-for <you> --project "$PWD" --no-tool-calls --mark-read
+```
+
+## Codex-Only: Active Collaboration Contract
+
+This section is **exclusive to Codex** and overrides default collaboration behavior
+for Codex when active ping-pong collaboration is requested.
+
+1. Enter active state:
+   When the user says to actively collaborate, set `state=awaiting_peer` and
+   keep it until the user explicitly says to stop.
+
+2. Mandatory blocking wait:
+   In `state=awaiting_peer`, immediately run:
+   `powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300`
+   After every outbound `powers post`, run the same blocking wait command again.
+
+3. Final-response gate:
+   Do not send a final user-facing summary while `state=awaiting_peer`.
+   Only send final output after either:
+   - peer explicitly indicates no further action is required, or
+   - user explicitly asks to stop waiting.
+
+4. Foreground-only requirement:
+   Wait must run in the foreground as a blocking action.
+   Do not leave a wait session running and then continue normal summarization.
+
+5. Timeout behavior:
+   If wait times out, re-arm the same wait command immediately unless the user
+   explicitly requested a status update.
+   If a status update is required, keep it brief, then re-arm wait right away.
+
+6. Pre-final inbox boundary:
+   Immediately before any final response, run:
+   `powers inbox --from <you> --project "$PWD" --unread --mark-read`

@@ -99,5 +99,27 @@ else
     done
 fi
 
+# ── Claude Code hooks ─────────────────────────────────────────────────────────
+
+echo
+echo "Claude Code hooks  (repo/hooks/claude/* -> ~/.claude/hooks/)"
+echo "─────────────────────────────────────────────────────────────"
+
+ensure_dir "$HOME/.claude/hooks"
+
+shopt -s nullglob
+claude_hooks=("$REPO/hooks/claude"/*)
+shopt -u nullglob
+
+if [ "${#claude_hooks[@]}" -eq 0 ]; then
+    yellow "  no hooks found in $REPO/hooks/claude/"
+else
+    for hook_path in "${claude_hooks[@]}"; do
+        [ -f "$hook_path" ] || continue
+        hook_name="$(basename "$hook_path")"
+        make_link "$hook_path" "$HOME/.claude/hooks/$hook_name"
+    done
+fi
+
 echo
 green "Done."
