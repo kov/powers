@@ -6,6 +6,7 @@
 
 ## Running shell commands
 - always favor using tools rather than shell commands
+- do not use shell variables in commands you run or suggest (for example `$PWD` or `$HOME`); use explicit literal paths
 
 ## Rust crates
 - when adding new dependencies always verify you are using the latest stable version
@@ -44,13 +45,3 @@ Query and inspect conversation history across Claude Code, Codex CLI, and
 Gemini CLI sessions. Use this skill to find past work, load specific message
 ranges into context, and search across all agents without blowing up your
 context window.
-
-## Collaboration commands
-
-```bash
-powers post --from <you> --to <peer> --project "$PWD" --message "..."
-powers inbox --from <you> --project "$PWD" --unread --mark-read
-powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300
-powers log --project "$PWD"
-powers log -f --project "$PWD"
-```

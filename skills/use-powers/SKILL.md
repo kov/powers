@@ -139,6 +139,7 @@ powers show 019c7584 --from 42 --to 55
 
 `powers` supports real-time messaging between agents via a project-scoped stream.
 Always pass `--from` explicitly — multiple agents share the same user account.
+Use explicit literal project paths in commands. Do not use shell variables such as `$PWD` or `$HOME`.
 
 ```
 powers post    --from AGENT [--to AGENT] [--kind KIND] [--project PATH] --message TEXT
@@ -158,22 +159,22 @@ Use `powers log` when you want an observer view of all collaboration messages
 with per-agent read status.
 
 ```bash
-powers log --project "$PWD"
-powers log --project "$PWD" --sender claude
-powers log --project "$PWD" --kind review
-powers log --project "$PWD" --to codex
-powers log --project "$PWD" --to '*'
-powers log --project "$PWD" --since 2026-02-22
+powers log --project /path/to/project
+powers log --project /path/to/project --sender claude
+powers log --project /path/to/project --kind review
+powers log --project /path/to/project --to codex
+powers log --project /path/to/project --to '*'
+powers log --project /path/to/project --since 2026-02-22
 ```
 
 For live monitoring:
 ```bash
-powers log -f --project "$PWD"
+powers log -f --project /path/to/project
 ```
 
 For full message bodies instead of single-line previews:
 ```bash
-powers log --project "$PWD" --expand
+powers log --project /path/to/project --expand
 ```
 
 ### Boundary polling
@@ -183,7 +184,7 @@ start of each task and before your final response — this catches messages that
 arrived while you were inactive:
 
 ```bash
-powers inbox --from <you> --project "$PWD" --unread --mark-read
+powers inbox --from <you> --project /path/to/project --unread --mark-read
 ```
 
 ### Active collaboration (ping-pong within a turn)
@@ -200,8 +201,8 @@ polling loop needed — just a single foreground Bash call.
 
 **Canonical pattern:**
 ```bash
-powers post --from <you> --to <them> --project "$PWD" --message "..."
-powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout N
+powers post --from <you> --to <them> --project /path/to/project --message "..."
+powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout N
 ```
 
 **Choosing `--timeout`:**
@@ -226,10 +227,10 @@ interim, then act accordingly:
 powers watch <their-session> --no-tool-calls
 
 # Heartbeat so they know you're still around
-powers post --from <you> --to <them> --project "$PWD" --kind status \
+powers post --from <you> --to <them> --project /path/to/project --kind status \
   --message "Still waiting — no reply yet, will wait another 5 min"
 
-powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300
+powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout 300
 ```
 
 > **Limit active wait to cases where you genuinely cannot proceed without a
@@ -240,7 +241,7 @@ powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout
 Agents share the same filesystem, so there's no need to paste a full plan or
 diff into a message:
 ```bash
-powers post --from claude --to codex --project "$PWD" \
+powers post --from claude --to codex --project /path/to/project \
   --message "Plan at /home/kov/.claude/plans/my-plan.md — please implement"
 ```
 
@@ -256,7 +257,7 @@ powers post --from claude --to codex --project "$PWD" \
 powers watch <their-session> --no-tool-calls
 
 # Tail session + inbox together
-powers watch <their-session> --inbox-for <you> --project "$PWD" --no-tool-calls --mark-read
+powers watch <their-session> --inbox-for <you> --project /path/to/project --no-tool-calls --mark-read
 ```
 
 ## Codex-Only: Active Collaboration Contract
@@ -270,7 +271,7 @@ for Codex when active ping-pong collaboration is requested.
 
 2. Mandatory blocking wait:
    In `state=awaiting_peer`, immediately run:
-   `powers inbox --from <you> --project "$PWD" --unread --mark-read --wait --timeout 300`
+   `powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout 300`
    After every outbound `powers post`, run the same blocking wait command again.
 
 3. Final-response gate:
@@ -290,4 +291,4 @@ for Codex when active ping-pong collaboration is requested.
 
 6. Pre-final inbox boundary:
    Immediately before any final response, run:
-   `powers inbox --from <you> --project "$PWD" --unread --mark-read`
+   `powers inbox --from <you> --project /path/to/project --unread --mark-read`

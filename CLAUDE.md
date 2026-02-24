@@ -94,10 +94,12 @@ powers inbox --from claude --unread --mark-read --project /path/to/project
 **Ping-pong — for active collaboration where you need a reply before continuing:**
 ```bash
 # Post a task or question
-powers post --from claude --to codex --project "$PWD" --message "..."
+powers post --from claude --to codex --project /path/to/project --message "..."
 # Block until reply; empty stdout = timeout
-powers inbox --from claude --project "$PWD" --unread --mark-read --wait --timeout 300
+powers inbox --from claude --project /path/to/project --unread --mark-read --wait --timeout 300
 ```
+
+Use explicit literal project paths in commands. Do not use shell variables such as `$PWD` or `$HOME`.
 
 See `skills/use-powers/SKILL.md` for full guidance including timeout calibration,
 handling interim messages, and what to include in completion notices.
