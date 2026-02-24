@@ -297,6 +297,7 @@ pub enum ToolFilter {
     Claude,
     Codex,
     Gemini,
+    Copilot,
 }
 
 #[derive(ValueEnum, Clone, Debug)]

@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use crate::cli::{SearchArgs, ToolFilter};
 use crate::config::Config;
 use crate::output;
-use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
+use crate::parsers::{
+    Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
+};
 use crate::session::{Message, SessionMeta, Tool};
 
 pub fn run(args: &SearchArgs) -> Result<()> {
@@ -57,6 +59,11 @@ fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMe
         .as_ref()
         .map(|t| t == &ToolFilter::Gemini)
         .unwrap_or(true);
+    let include_copilot = args
+        .tool
+        .as_ref()
+        .map(|t| t == &ToolFilter::Copilot)
+        .unwrap_or(true);
 
     if include_claude {
         match ClaudeParser::new(config).discover() {
@@ -74,6 +81,12 @@ fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMe
         match GeminiParser::new(config).discover() {
             Ok(mut s) => sessions.append(&mut s),
             Err(e) => output::print_warn(&format!("Gemini discovery failed: {e}")),
+        }
+    }
+    if include_copilot {
+        match CopilotParser::new(config).discover() {
+            Ok(mut s) => sessions.append(&mut s),
+            Err(e) => output::print_warn(&format!("Copilot discovery failed: {e}")),
         }
     }
 
@@ -107,8 +120,6 @@ fn search_session(
         _ => search_jsonl(meta, pattern, args, total_matches),
     }
 }
-
-/// Phase 2+3: scan JSONL line by line.
 ///
 /// Uses a ring buffer of `context` messages for pre-context.
 /// After each match, collects up to `context` post-context messages before
@@ -227,6 +238,7 @@ fn parse_jsonl_message(line: &str, tool: &Tool) -> Option<Message> {
     match tool {
         Tool::Claude => parse_claude_line(line),
         Tool::Codex => parse_codex_line(line),
+        Tool::Copilot => parse_copilot_line(line),
         _ => None,
     }
 }
@@ -285,6 +297,19 @@ fn parse_codex_line(line: &str) -> Option<Message> {
     }
 
     None
+}
+
+fn parse_copilot_line(line: &str) -> Option<Message> {
+    // Pre-filter: must be a user or assistant message event
+    let is_user = line.contains("\"type\":\"user.message\"");
+    let is_assistant = line.contains("\"type\":\"assistant.message\"");
+    if !is_user && !is_assistant {
+        return None;
+    }
+
+    let record: serde_json::Value = serde_json::from_str(line).ok()?;
+    use crate::parsers::copilot::parse_copilot_event_pub;
+    parse_copilot_event_pub(&record)
 }
 
 /// For Gemini (full JSON, not JSONL): load all messages but still use the ring

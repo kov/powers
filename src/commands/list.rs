@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use crate::cli::{ListArgs, OutputFormat, ToolFilter};
 use crate::config::Config;
 use crate::output;
-use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
+use crate::parsers::{
+    Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
+};
 use crate::session::SessionMeta;
 
 pub fn run(args: &ListArgs) -> Result<()> {
@@ -27,6 +29,11 @@ pub fn run(args: &ListArgs) -> Result<()> {
         .tool
         .as_ref()
         .map(|t| t == &ToolFilter::Gemini)
+        .unwrap_or(true);
+    let include_copilot = args
+        .tool
+        .as_ref()
+        .map(|t| t == &ToolFilter::Copilot)
         .unwrap_or(true);
 
     if include_claude {
@@ -50,6 +57,14 @@ pub fn run(args: &ListArgs) -> Result<()> {
         match parser.discover() {
             Ok(mut s) => sessions.append(&mut s),
             Err(e) => output::print_warn(&format!("Gemini discovery failed: {e}")),
+        }
+    }
+
+    if include_copilot {
+        let parser = CopilotParser::new(&config);
+        match parser.discover() {
+            Ok(mut s) => sessions.append(&mut s),
+            Err(e) => output::print_warn(&format!("Copilot discovery failed: {e}")),
         }
     }
 

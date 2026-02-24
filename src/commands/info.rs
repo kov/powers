@@ -3,7 +3,9 @@ use anyhow::{Result, bail};
 use crate::cli::InfoArgs;
 use crate::config::Config;
 use crate::output;
-use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
+use crate::parsers::{
+    Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
+};
 use crate::session::SessionMeta;
 
 pub fn run(args: &InfoArgs) -> Result<()> {
@@ -64,6 +66,12 @@ pub fn discover_all(config: &Config) -> Result<Vec<crate::session::SessionMeta>>
     match gemini.discover() {
         Ok(mut s) => sessions.append(&mut s),
         Err(e) => output::print_warn(&format!("Gemini discovery failed: {e}")),
+    }
+
+    let copilot = CopilotParser::new(config);
+    match copilot.discover() {
+        Ok(mut s) => sessions.append(&mut s),
+        Err(e) => output::print_warn(&format!("Copilot discovery failed: {e}")),
     }
 
     Ok(sessions)

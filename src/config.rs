@@ -4,6 +4,7 @@ pub struct Config {
     pub claude_dir: PathBuf,
     pub codex_dir: PathBuf,
     pub gemini_dir: PathBuf,
+    pub copilot_dir: PathBuf,
     pub powers_dir: PathBuf,
 }
 
@@ -23,6 +24,10 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| home.join(".gemini"));
 
+        let copilot_dir = std::env::var("POWERS_COPILOT_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| home.join(".copilot").join("session-state"));
+
         let powers_dir = std::env::var("POWERS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| home.join(".powers"));
@@ -31,6 +36,7 @@ impl Config {
             claude_dir,
             codex_dir,
             gemini_dir,
+            copilot_dir,
             powers_dir,
         }
     }

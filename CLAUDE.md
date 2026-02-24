@@ -42,13 +42,14 @@ src/
   main.rs           — CLI dispatch only
   cli.rs            — clap Derive structs
   config.rs         — Path resolution (~/.claude etc.) with env var overrides:
-                       POWERS_CLAUDE_DIR, POWERS_CODEX_DIR, POWERS_GEMINI_DIR, POWERS_DIR
+                       POWERS_CLAUDE_DIR, POWERS_CODEX_DIR, POWERS_GEMINI_DIR, POWERS_COPILOT_DIR, POWERS_DIR
   session.rs        — Core types: SessionMeta, Session, Message, Role, Tool
   parsers/
     mod.rs          — Parser trait: discover() + load()
     claude.rs       — Claude JSONL parser
     codex.rs        — Codex JSONL parser (old flat + new nested formats)
     gemini.rs       — Gemini JSON parser
+    copilot.rs      — Copilot CLI JSONL parser (events.jsonl format)
   commands/
     list.rs         — powers list
     search.rs       — powers search (streaming, ring-buffer context)
@@ -119,19 +120,25 @@ powers log -f --project PATH    # follow in-place, refreshes as cursors advance
 
 ## Session File Format Reference
 
-| Tool   | Path pattern                              | Format |
-|--------|-------------------------------------------|--------|
-| Claude | `~/.claude/projects/*/*.jsonl`            | JSONL  |
-| Codex  | `~/.codex/sessions/rollout-*.jsonl`       | JSONL (old flat) |
-| Codex  | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSONL (new nested) |
-| Gemini | `~/.gemini/tmp/*/chats/*.json`            | JSON object |
+| Tool    | Path pattern                                       | Format |
+|---------|---------------------------------------------------|--------|
+| Claude  | `~/.claude/projects/*/*.jsonl`                    | JSONL  |
+| Codex   | `~/.codex/sessions/rollout-*.jsonl`               | JSONL (old flat) |
+| Codex   | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`    | JSONL (new nested) |
+| Gemini  | `~/.gemini/tmp/*/chats/*.json`                    | JSON object |
+| Copilot | `~/.copilot/session-state/*/events.jsonl`         | JSONL (v0.0.416+) |
 
 **Claude line 0**: `{type:"system", sessionId, cwd, gitBranch, timestamp}`
 **Codex old line 0**: `{id, timestamp, instructions, git:{branch}}`
 **Codex new line 0**: `{type:"session_meta", payload:{id, cwd, timestamp}}`
 **Gemini top-level**: `{sessionId, projectHash, startTime, lastUpdated, messages[]}`
+**Copilot session.start**: `{type:"session.start", data:{sessionId, startTime, context:{cwd, gitRoot, branch}}, timestamp}`
 
 **Claude message types to keep**: `"user"`, `"assistant"` (skip all others)
 **Codex old**: `{type:"message", role:"user"|"assistant", content:[{type,text}]}`
 **Codex new**: `{type:"response_item", payload:{type:"message", role, content:[...]}}`
 **Gemini**: `{type:"user"|"gemini", content: string|[{text}], toolCalls?:[...]}`
+**Copilot user**: `{type:"user.message", data:{content}, timestamp}`
+**Copilot assistant**: `{type:"assistant.message", data:{content, toolRequests:[{name,arguments}]}, timestamp}`
+
+Copilot metadata is in `workspace.yaml` alongside `events.jsonl`; sessions predating v0.0.416 have only `workspace.yaml` (no message content).

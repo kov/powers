@@ -1,0 +1,11 @@
+{"type":"session.start","data":{"sessionId":"cccccccc-0000-0000-0000-000000000001","version":1,"producer":"copilot-agent","startTime":"2026-01-15T10:00:00.000Z","context":{"cwd":"/test/project","gitRoot":"/test/project","branch":"main","repository":"owner/repo"}},"id":"evt-1","timestamp":"2026-01-15T10:00:00.000Z","parentId":null}
+{"type":"user.message","data":{"content":"first copilot message about apples","transformedContent":"first copilot message about apples","attachments":[],"agentMode":"interactive"},"id":"evt-2","timestamp":"2026-01-15T10:01:00.000Z","parentId":"evt-1"}
+{"type":"assistant.turn_start","data":{},"id":"evt-3","timestamp":"2026-01-15T10:01:01.000Z","parentId":"evt-2"}
+{"type":"assistant.message","data":{"messageId":"msg-1","content":"I see apples. Let me help.","toolRequests":[]},"id":"evt-4","timestamp":"2026-01-15T10:01:30.000Z","parentId":"evt-3"}
+{"type":"assistant.turn_end","data":{},"id":"evt-5","timestamp":"2026-01-15T10:01:31.000Z","parentId":"evt-4"}
+{"type":"user.message","data":{"content":"second message about bananas","transformedContent":"second message about bananas","attachments":[],"agentMode":"interactive"},"id":"evt-6","timestamp":"2026-01-15T10:02:00.000Z","parentId":"evt-5"}
+{"type":"assistant.message","data":{"messageId":"msg-2","content":"Here are the bananas.","toolRequests":[{"toolCallId":"tc-1","name":"bash","arguments":{"command":"ls"},"type":"function"}]},"id":"evt-7","timestamp":"2026-01-15T10:02:30.000Z","parentId":"evt-6"}
+{"type":"tool.execution_start","data":{"toolCallId":"tc-1"},"id":"evt-8","timestamp":"2026-01-15T10:02:31.000Z","parentId":"evt-7"}
+{"type":"tool.execution_complete","data":{"toolCallId":"tc-1","result":"file.txt"},"id":"evt-9","timestamp":"2026-01-15T10:02:32.000Z","parentId":"evt-8"}
+{"type":"user.message","data":{"content":"third message about cherries","transformedContent":"third message about cherries","attachments":[],"agentMode":"interactive"},"id":"evt-10","timestamp":"2026-01-15T10:03:00.000Z","parentId":"evt-9"}
+{"type":"assistant.message","data":{"messageId":"msg-3","content":"Cherries are red.","toolRequests":[]},"id":"evt-11","timestamp":"2026-01-15T10:03:30.000Z","parentId":"evt-10"}

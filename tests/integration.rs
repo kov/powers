@@ -13,7 +13,8 @@ fn powers() -> Command {
     let f = fixtures();
     cmd.env("POWERS_CLAUDE_DIR", f.join("claude"))
         .env("POWERS_CODEX_DIR", f.join("codex"))
-        .env("POWERS_GEMINI_DIR", f.join("gemini"));
+        .env("POWERS_GEMINI_DIR", f.join("gemini"))
+        .env("POWERS_COPILOT_DIR", f.join("copilot"));
     cmd
 }
 
@@ -41,6 +42,7 @@ fn list_shows_all_tools() {
     assert!(s.contains("claude"), "missing claude: {s}");
     assert!(s.contains("codex"), "missing codex: {s}");
     assert!(s.contains("gemini"), "missing gemini: {s}");
+    assert!(s.contains("copilot"), "missing copilot: {s}");
 }
 
 #[test]
@@ -252,7 +254,7 @@ fn search_no_match_produces_no_output() {
 #[test]
 fn search_session_only_prints_uuid_per_line() {
     let out = powers()
-        .args(["search", "apples", "--session-only"])
+        .args(["search", "apples", "--session-only", "--tool", "claude"])
         .output()
         .unwrap();
     let s = stdout(&out);
@@ -641,4 +643,142 @@ fn inbox_format_json_outputs_jsonl_records() {
     assert_eq!(value["to"], "codex");
     assert_eq!(value["kind"], "note");
     assert_eq!(value["body"], "json payload");
+}
+
+// ── copilot ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn list_filter_by_tool_copilot() {
+    let out = powers()
+        .args(["list", "--tool", "copilot"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(s.contains("cccccccc"), "copilot session missing: {s}");
+    assert!(!s.contains("aaaaaaaa"), "claude session leaked: {s}");
+    assert!(!s.contains("bbbbbbbb"), "codex session leaked: {s}");
+}
+
+#[test]
+fn list_copilot_message_count() {
+    let out = powers()
+        .args(["list", "--tool", "copilot", "--format", "tsv"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    // First row (most recent) is the session with events.jsonl (6 messages)
+    let first_row = s.lines().next().unwrap_or("");
+    assert!(
+        first_row.contains("cccccccc"),
+        "expected copilot session first: {first_row}"
+    );
+    let fields: Vec<&str> = first_row.split('\t').collect();
+    let count: usize = fields.last().unwrap().trim().parse().unwrap();
+    assert_eq!(count, 6, "expected 6 messages (3 user + 3 assistant): {s}");
+}
+
+#[test]
+fn list_copilot_legacy_session_has_zero_messages() {
+    let out = powers()
+        .args(["list", "--tool", "copilot", "--format", "tsv"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    // Legacy session (no events.jsonl) should appear with 0 messages
+    let legacy_row = s
+        .lines()
+        .find(|l| l.contains("cccccccc-0000-0000-0000-000000000002"))
+        .unwrap_or("");
+    assert!(!legacy_row.is_empty(), "legacy session missing: {s}");
+    let fields: Vec<&str> = legacy_row.split('\t').collect();
+    let count: usize = fields.last().unwrap().trim().parse().unwrap();
+    assert_eq!(count, 0, "legacy session should have 0 messages: {s}");
+}
+
+#[test]
+fn info_copilot_shows_metadata() {
+    let out = powers()
+        .args(["info", "cccccccc-0000-0000-0000-000000000001"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "info failed: {s}");
+    assert!(s.contains("cccccccc-0000-0000-0000-000000000001"));
+    assert!(s.contains("copilot"));
+    assert!(s.contains("/test/project"));
+    assert!(s.contains("main")); // git branch from events.jsonl
+    assert!(s.contains("6")); // message count
+}
+
+#[test]
+fn show_copilot_last_2() {
+    let out = powers()
+        .args([
+            "show",
+            "cccccccc-0000-0000-0000-000000000001",
+            "--last",
+            "2",
+            "--no-tool-calls",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "show failed: {s}");
+    assert!(s.contains("cherries"), "third user message missing: {s}");
+    assert!(
+        s.contains("Cherries are red"),
+        "third assistant message missing: {s}"
+    );
+    // Earlier messages should not appear
+    assert!(!s.contains("apples"), "apples leaked: {s}");
+}
+
+#[test]
+fn search_tool_filter_copilot() {
+    let out = powers()
+        .args(["search", "bananas", "--tool", "copilot"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(s.contains("cccccccc"), "copilot session missing: {s}");
+    assert!(s.contains("bananas"), "match missing: {s}");
+}
+
+#[test]
+fn search_copilot_excludes_other_tools() {
+    // "apples" appears in claude fixture too — filter to copilot only
+    let out = powers()
+        .args(["search", "apples", "--tool", "copilot"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(s.contains("cccccccc"), "copilot session missing: {s}");
+    assert!(!s.contains("aaaaaaaa"), "claude session leaked: {s}");
+}
+
+#[test]
+fn search_copilot_no_tool_calls_in_show() {
+    // Assistant message in fixture has a tool call; show --no-tool-calls should strip it
+    let out = powers()
+        .args([
+            "show",
+            "cccccccc-0000-0000-0000-000000000001",
+            "--no-tool-calls",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "show failed: {s}");
+    // "bash" is a tool call name — should not appear in output
+    assert!(!s.contains("\"bash\""), "tool call name leaked: {s}");
+    // Prose content should still be present
+    assert!(
+        s.contains("Here are the bananas"),
+        "assistant prose missing: {s}"
+    );
 }

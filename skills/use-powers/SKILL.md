@@ -1,18 +1,18 @@
 ---
 name: use-powers
-description: Query and inspect conversation history across Claude Code, Codex CLI, and Gemini CLI sessions. Use when you need to find past work, search across agent sessions, or selectively load a slice of conversation history without blowing up your context window.
+description: Query and inspect conversation history across Claude Code, Codex CLI, Gemini CLI, and Copilot CLI sessions. Use when you need to find past work, search across agent sessions, or selectively load a slice of conversation history without blowing up your context window.
 ---
 
 # Skill: Using `powers` to Query Agent Sessions
 
 `powers` is a CLI tool that lets you search, inspect, and selectively load
-conversation history from Claude Code, Codex CLI, and Gemini CLI sessions —
+conversation history from Claude Code, Codex CLI, Gemini CLI, and Copilot CLI sessions —
 without blowing up your context window.
 
 ## Quick-Reference
 
 ```
-powers list    [--tool claude|codex|gemini] [--project PATH] [--since YYYY-MM-DD] [--limit N] [--format table|tsv]
+powers list    [--tool claude|codex|gemini|copilot] [--project PATH] [--since YYYY-MM-DD] [--limit N] [--format table|tsv]
 powers search  <PATTERN> [--tool ...] [--project ...] [--since ...] [--context N] [--max-matches N] [--case-sensitive] [--session-only]
 powers info    <SESSION>
 powers show    <SESSION> [--last N] [--first N] [--from N] [--to N] [--role user|assistant|all] [--no-tool-calls] [--width N]
@@ -292,3 +292,43 @@ for Codex when active ping-pong collaboration is requested.
 6. Pre-final inbox boundary:
    Immediately before any final response, run:
    `powers inbox --from <you> --project /path/to/project --unread --mark-read`
+
+## Copilot CLI: Collaboration Contract
+
+Copilot CLI uses the identity string `copilot` for all collaboration commands.
+Always pass `--from copilot` explicitly.
+
+### Boundary polling
+
+At the start of each task and before your final response, check for unread messages:
+
+```bash
+powers inbox --from copilot --project /path/to/project --unread --mark-read
+```
+
+### Active ping-pong collaboration
+
+When you need to delegate work to another agent and wait for a reply within
+the same turn:
+
+```bash
+# Assign the task
+powers post --from copilot --to codex --project /path/to/project --message "..."
+
+# Block until reply (empty stdout = timeout)
+powers inbox --from copilot --project /path/to/project --unread --mark-read --wait --timeout 300
+```
+
+Use the same timeout guidance as the general collaboration section above.
+If the wait times out, optionally observe progress with `watch`, send a heartbeat,
+then re-wait.
+
+### Watching another agent's live session
+
+```bash
+# Watch a Codex or Claude session + your own inbox simultaneously
+powers watch <their-session> --inbox-for copilot --project /path/to/project --no-tool-calls --mark-read
+```
+
+Copilot sessions (v0.0.416+) can also be watched by other agents — they are
+stored in `~/.copilot/session-state/{uuid}/events.jsonl` (JSONL format).

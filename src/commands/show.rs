@@ -3,7 +3,9 @@ use anyhow::Result;
 use crate::cli::{RoleFilter, ShowArgs};
 use crate::config::Config;
 use crate::output;
-use crate::parsers::{Parser, claude::ClaudeParser, codex::CodexParser, gemini::GeminiParser};
+use crate::parsers::{
+    Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
+};
 use crate::session::{Role, Session};
 
 use super::info::{discover_all, resolve_session_meta};
@@ -104,5 +106,6 @@ fn load_session(meta: &crate::session::SessionMeta, config: &Config) -> Result<S
         Tool::Claude => ClaudeParser::new(config).load(meta),
         Tool::Codex => CodexParser::new(config).load(meta),
         Tool::Gemini => GeminiParser::new(config).load(meta),
+        Tool::Copilot => CopilotParser::new(config).load(meta),
     }
 }

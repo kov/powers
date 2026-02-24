@@ -292,6 +292,10 @@ fn parse_session_message(tool: &Tool, record: &Value) -> Option<Message> {
                 _ => None,
             }
         }
+        Tool::Copilot => {
+            use crate::parsers::copilot::parse_copilot_event_pub;
+            parse_copilot_event_pub(record)
+        }
         Tool::Gemini => None,
     }
 }

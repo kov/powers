@@ -6,6 +6,7 @@ pub enum Tool {
     Claude,
     Codex,
     Gemini,
+    Copilot,
 }
 
 impl std::fmt::Display for Tool {
@@ -14,6 +15,7 @@ impl std::fmt::Display for Tool {
             Tool::Claude => write!(f, "claude"),
             Tool::Codex => write!(f, "codex"),
             Tool::Gemini => write!(f, "gemini"),
+            Tool::Copilot => write!(f, "copilot"),
         }
     }
 }
