@@ -27,6 +27,12 @@
 - always run whatever formatting and linting tools are specified for the project before committing, if unsure which one
   or how to run it, ask
 
+# Maintaining project-wide guidance files
+- Keep guidance short and high-signal.
+- Include only rules that are critical across most tasks (durable constraints, invariants, safety checks).
+- Remove content that is task-specific, historical, redundant, or easy to discover via --help, quick file exploration, or nearby code.
+- Prefer pointing to canonical docs/files over duplicating long implementation details.
+
 # Skills Index
 
 The following skills are available. Keep them in mind while doing your work,
