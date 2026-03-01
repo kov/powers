@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod output;
 mod parsers;
+mod persisted;
 mod session;
 
 use clap::Parser;
@@ -21,6 +22,7 @@ fn main() {
         Commands::Inbox(args) => commands::inbox::run(args),
         Commands::Log(args) => commands::log::run(args),
         Commands::Watch(args) => commands::watch::run(args),
+        Commands::ToolResult(args) => commands::tool_result::run(args),
     };
 
     if let Err(e) = result {

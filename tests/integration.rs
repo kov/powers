@@ -230,6 +230,27 @@ fn show_header_reports_correct_slice() {
     );
 }
 
+#[test]
+fn show_expand_persisted_reads_tool_result_file() {
+    let out = powers()
+        .args([
+            "show",
+            "aaaaaaaa",
+            "--last",
+            "2",
+            "--expand-persisted",
+            "--max-bytes",
+            "24",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "show failed: {s}");
+    assert!(s.contains("persisted_path:"), "persisted path missing: {s}");
+    assert!(s.contains("banana line 1"), "expanded content missing: {s}");
+    assert!(s.contains("truncated"), "expected truncation marker: {s}");
+}
+
 // ── search ────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -676,7 +697,10 @@ fn list_copilot_message_count() {
     );
     let fields: Vec<&str> = first_row.split('\t').collect();
     let count: usize = fields.last().unwrap().trim().parse().unwrap();
-    assert_eq!(count, 6, "expected 6 messages (3 user + 3 assistant): {s}");
+    assert_eq!(
+        count, 7,
+        "expected 7 messages (3 user + 3 assistant + 1 tool result): {s}"
+    );
 }
 
 #[test]
@@ -781,4 +805,22 @@ fn search_copilot_no_tool_calls_in_show() {
         s.contains("Here are the bananas"),
         "assistant prose missing: {s}"
     );
+}
+
+// ── tool-result ──────────────────────────────────────────────────────────────
+
+#[test]
+fn tool_result_finds_and_resolves_persisted_output() {
+    let out = powers()
+        .args(["tool-result", "tool-1", "--max-bytes", "24"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "tool-result failed: {s}");
+    assert!(
+        s.contains("tool_result tool-1"),
+        "tool result header missing: {s}"
+    );
+    assert!(s.contains("persisted_path:"), "persisted path missing: {s}");
+    assert!(s.contains("banana line 1"), "resolved content missing: {s}");
 }

@@ -6,6 +6,6 @@
 {"type":"user.message","data":{"content":"second message about bananas","transformedContent":"second message about bananas","attachments":[],"agentMode":"interactive"},"id":"evt-6","timestamp":"2026-01-15T10:02:00.000Z","parentId":"evt-5"}
 {"type":"assistant.message","data":{"messageId":"msg-2","content":"Here are the bananas.","toolRequests":[{"toolCallId":"tc-1","name":"bash","arguments":{"command":"ls"},"type":"function"}]},"id":"evt-7","timestamp":"2026-01-15T10:02:30.000Z","parentId":"evt-6"}
 {"type":"tool.execution_start","data":{"toolCallId":"tc-1"},"id":"evt-8","timestamp":"2026-01-15T10:02:31.000Z","parentId":"evt-7"}
-{"type":"tool.execution_complete","data":{"toolCallId":"tc-1","result":"file.txt"},"id":"evt-9","timestamp":"2026-01-15T10:02:32.000Z","parentId":"evt-8"}
+{"type":"tool.execution_complete","data":{"toolCallId":"tc-1","result":{"content":"file.txt","detailedContent":""}},"id":"evt-9","timestamp":"2026-01-15T10:02:32.000Z","parentId":"evt-8"}
 {"type":"user.message","data":{"content":"third message about cherries","transformedContent":"third message about cherries","attachments":[],"agentMode":"interactive"},"id":"evt-10","timestamp":"2026-01-15T10:03:00.000Z","parentId":"evt-9"}
 {"type":"assistant.message","data":{"messageId":"msg-3","content":"Cherries are red.","toolRequests":[]},"id":"evt-11","timestamp":"2026-01-15T10:03:30.000Z","parentId":"evt-10"}

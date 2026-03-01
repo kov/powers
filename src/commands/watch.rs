@@ -98,7 +98,7 @@ fn run_session_only(meta: &SessionMeta, args: &WatchArgs) -> Result<()> {
             }
 
             let display = Message { content, ..msg };
-            output::print_message(&display, width);
+            output::print_message(&display, width, output::MessageRenderOptions::default());
             had_output = true;
         }
 

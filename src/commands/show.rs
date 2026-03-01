@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::cli::{RoleFilter, ShowArgs};
 use crate::config::Config;
 use crate::output;
+use crate::output::MessageRenderOptions;
 use crate::parsers::{
     Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
 };
@@ -19,6 +20,10 @@ pub fn run(args: &ShowArgs) -> Result<()> {
     let session = load_session(meta, &config)?;
 
     let width = args.width.unwrap_or_else(output::terminal_width);
+    let render_opts = MessageRenderOptions {
+        expand_persisted: args.expand_persisted,
+        max_bytes: args.max_bytes,
+    };
 
     // Apply role filter
     let messages: Vec<_> = session
@@ -65,7 +70,7 @@ pub fn run(args: &ShowArgs) -> Result<()> {
             content: content.clone(),
             timestamp: msg.timestamp,
         };
-        output::print_message(&display_msg, width);
+        output::print_message(&display_msg, width, render_opts);
     }
 
     Ok(())

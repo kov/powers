@@ -366,4 +366,173 @@ mod tests {
         );
         assert_eq!(meta.git_branch.as_deref(), Some("main"));
     }
+
+    // ── parse_claude_content_part edge cases ──────────────────────────────────
+
+    fn make_user_record_with_content(content_json: &str) -> Value {
+        serde_json::from_str(&format!(
+            r#"{{"type":"user","message":{{"role":"user","content":{content_json}}},"timestamp":"2026-02-21T12:01:00.000Z","uuid":"u-x","sessionId":"s-1"}}"#
+        ))
+        .unwrap()
+    }
+
+    fn parts(msg: &Message) -> &[ContentPart] {
+        match &msg.content {
+            MessageContent::Parts(p) => p,
+            _ => panic!("expected Parts variant"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_plain_string_content() {
+        let record = make_user_record_with_content(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_abc","content":"simple output","is_error":false}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        let p = parts(&msg);
+        assert_eq!(p.len(), 1);
+        match &p[0] {
+            ContentPart::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "toolu_abc");
+                assert_eq!(content, "simple output");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_persisted_content_preserved_verbatim() {
+        let persisted = r#"<persisted-output>\nOutput too large (65KB). Full output saved to: /tmp/toolu_abc.txt\n\nPreview:\nhello\n</persisted-output>"#;
+        let record = make_user_record_with_content(&format!(
+            r#"[{{"type":"tool_result","tool_use_id":"toolu_abc","content":"{persisted}","is_error":false}}]"#
+        ));
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        match &parts(&msg)[0] {
+            ContentPart::ToolResult { content, .. } => {
+                assert!(content.contains("<persisted-output>"));
+                assert!(content.contains("/tmp/toolu_abc.txt"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_content_as_array_of_text_parts() {
+        let record = make_user_record_with_content(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_arr","content":[{"type":"text","text":"line1"},{"type":"text","text":"line2"}],"is_error":false}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        match &parts(&msg)[0] {
+            ContentPart::ToolResult { content, .. } => {
+                assert_eq!(content, "line1\nline2");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_with_is_error_true_still_parses() {
+        // is_error is not currently stored in ContentPart, but the record must parse.
+        let record = make_user_record_with_content(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_err","content":"Approval required: rm -rf /","is_error":true}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        match &parts(&msg)[0] {
+            ContentPart::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "toolu_err");
+                assert!(content.contains("Approval required"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_with_empty_string_content() {
+        let record = make_user_record_with_content(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_empty","content":"","is_error":false}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        match &parts(&msg)[0] {
+            ContentPart::ToolResult { content, .. } => {
+                assert_eq!(content, "");
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_with_null_content_falls_back_gracefully() {
+        // content: null — should parse without panic, content becomes "null" (json fallback)
+        let record = make_user_record_with_content(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_null","content":null,"is_error":false}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        // Must not panic; result is implementation-defined for null
+        assert_eq!(parts(&msg).len(), 1);
+    }
+
+    #[test]
+    fn test_user_message_with_multiple_tool_results_some_persisted() {
+        let record = make_user_record_with_content(
+            r#"[
+              {"type":"tool_result","tool_use_id":"toolu_a","content":"small output","is_error":false},
+              {"type":"tool_result","tool_use_id":"toolu_b","content":"<persisted-output>\nOutput too large (100KB). Full output saved to: /tmp/toolu_b.txt\n</persisted-output>","is_error":false}
+            ]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        let p = parts(&msg);
+        assert_eq!(p.len(), 2);
+        match &p[0] {
+            ContentPart::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "toolu_a");
+                assert_eq!(content, "small output");
+            }
+            _ => panic!(),
+        }
+        match &p[1] {
+            ContentPart::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "toolu_b");
+                assert!(content.contains("<persisted-output>"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_persisted_path_with_spaces() {
+        use crate::persisted::parse_persisted_output_ref;
+        let content = "<persisted-output>\nOutput too large (10KB). Full output saved to: /home/my user/path with spaces/tool-results/toolu_abc.txt\n</persisted-output>";
+        let p = parse_persisted_output_ref(content).unwrap();
+        assert_eq!(
+            p.path.to_str().unwrap(),
+            "/home/my user/path with spaces/tool-results/toolu_abc.txt"
+        );
+    }
+
+    #[test]
+    fn test_tool_result_unknown_part_type_skipped() {
+        // Unknown types should be silently ignored; known types after them still parsed.
+        let record = make_user_record_with_content(
+            r#"[{"type":"image","source":{"type":"base64","data":"abc"}},{"type":"tool_result","tool_use_id":"toolu_known","content":"ok","is_error":false}]"#,
+        );
+        let msg = parse_message_from_record(&record, "user").unwrap();
+        // Only the known tool_result should survive; image is skipped
+        assert_eq!(parts(&msg).len(), 1);
+        match &parts(&msg)[0] {
+            ContentPart::ToolResult { tool_use_id, .. } => assert_eq!(tool_use_id, "toolu_known"),
+            _ => panic!(),
+        }
+    }
 }

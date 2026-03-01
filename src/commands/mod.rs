@@ -5,4 +5,5 @@ pub mod log;
 pub mod post;
 pub mod search;
 pub mod show;
+pub mod tool_result;
 pub mod watch;

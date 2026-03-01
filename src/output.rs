@@ -1,7 +1,23 @@
 use chrono::{DateTime, Utc};
 
 use crate::collab::StreamMessage;
+use crate::persisted::{extract_embedded_preview, parse_persisted_output_ref, read_preview};
 use crate::session::{ContentPart, Message, MessageContent, SessionMeta};
+
+#[derive(Debug, Clone, Copy)]
+pub struct MessageRenderOptions {
+    pub expand_persisted: bool,
+    pub max_bytes: usize,
+}
+
+impl Default for MessageRenderOptions {
+    fn default() -> Self {
+        Self {
+            expand_persisted: false,
+            max_bytes: 8192,
+        }
+    }
+}
 
 /// Get the current terminal width, with fallback to 100.
 pub fn terminal_width() -> usize {
@@ -138,18 +154,18 @@ pub fn print_show_header(meta: &SessionMeta, from: usize, to: usize, total: usiz
 }
 
 /// Print a single message in `show` output.
-pub fn print_message(msg: &Message, width: usize) {
+pub fn print_message(msg: &Message, width: usize, opts: MessageRenderOptions) {
     let ts = msg
         .timestamp
         .as_ref()
         .map(format_datetime)
         .unwrap_or_default();
     println!("[{}] {} {}", msg.index, msg.role, ts);
-    print_message_content(&msg.content, width);
+    print_message_content(&msg.content, width, opts);
     println!();
 }
 
-fn print_message_content(content: &MessageContent, width: usize) {
+fn print_message_content(content: &MessageContent, width: usize, opts: MessageRenderOptions) {
     match content {
         MessageContent::Text(s) => {
             print_wrapped(s, width, "  ");
@@ -175,13 +191,72 @@ fn print_message_content(content: &MessageContent, width: usize) {
                         content,
                     } => {
                         println!("  [tool_result: {}]", tool_use_id);
-                        let preview = content.lines().next().unwrap_or("").trim();
-                        println!("    {}", truncate(preview, width.saturating_sub(4)));
+                        if let Some(persisted) = parse_persisted_output_ref(content) {
+                            println!("    persisted_path: {}", persisted.path.display());
+                            if let Some(size) = persisted.declared_size {
+                                println!("    persisted_size: {}", size);
+                            }
+                            if opts.expand_persisted {
+                                match read_preview(&persisted.path, opts.max_bytes) {
+                                    Ok(preview) => {
+                                        println!(
+                                            "    resolved_bytes: {} of {}",
+                                            preview.bytes_read, preview.total_size
+                                        );
+                                        for line in preview.text.lines() {
+                                            println!("    {}", line);
+                                        }
+                                        if preview.truncated {
+                                            println!(
+                                                "    [truncated at {} bytes; use --max-bytes to increase]",
+                                                opts.max_bytes
+                                            );
+                                        }
+                                    }
+                                    Err(err) => {
+                                        println!("    [error reading persisted output: {err}]");
+                                        if let Some(preview) = extract_embedded_preview(content) {
+                                            println!("    [embedded preview]");
+                                            for line in preview.lines() {
+                                                println!("    {}", line);
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!(
+                                    "    [persisted output not expanded; rerun with --expand-persisted --max-bytes {}]",
+                                    opts.max_bytes
+                                );
+                                println!(
+                                    "    [or query directly: powers tool-result {} --max-bytes {}]",
+                                    tool_use_id, opts.max_bytes
+                                );
+                            }
+                        } else {
+                            let preview = content.lines().next().unwrap_or("").trim();
+                            println!("    {}", truncate(preview, width.saturating_sub(4)));
+                        }
                     }
                 }
             }
         }
     }
+}
+
+pub fn print_tool_result_header(meta: &SessionMeta, msg_index: usize, tool_use_id: &str) {
+    println!(
+        "=== tool_result {} | {} {} | msg {} ===",
+        tool_use_id, meta.tool, meta.id, msg_index
+    );
+}
+
+pub fn print_line(line: &str) {
+    println!("{line}");
+}
+
+pub fn print_blank_line() {
+    println!();
 }
 
 /// Print `info` command output for a session.

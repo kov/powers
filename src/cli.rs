@@ -26,6 +26,8 @@ pub enum Commands {
     Log(LogArgs),
     /// Watch a live agent session, optionally with collaboration inbox updates
     Watch(WatchArgs),
+    /// Show one tool result by tool use ID
+    ToolResult(ToolResultArgs),
 }
 
 #[derive(clap::Args)]
@@ -117,6 +119,14 @@ pub struct ShowArgs {
     /// Wrap output at this width (default: terminal width)
     #[arg(long)]
     pub width: Option<usize>,
+
+    /// Expand Claude persisted tool outputs inline when available
+    #[arg(long)]
+    pub expand_persisted: bool,
+
+    /// Maximum bytes to print for expanded tool output
+    #[arg(long, default_value = "8192")]
+    pub max_bytes: usize,
 }
 
 #[derive(clap::Args)]
@@ -290,6 +300,16 @@ pub struct LogArgs {
     /// Disable ANSI colors
     #[arg(long)]
     pub no_color: bool,
+}
+
+#[derive(clap::Args)]
+pub struct ToolResultArgs {
+    /// Tool use ID (for example: toolu_01FqFtbmmtXPTmjTrMfAuirY)
+    pub tool_use_id: String,
+
+    /// Maximum bytes to print from resolved output body
+    #[arg(long, default_value = "65536")]
+    pub max_bytes: usize,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]

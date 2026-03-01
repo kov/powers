@@ -126,7 +126,7 @@ fn read_events_metadata(events_path: &PathBuf) -> (Option<String>, usize) {
                     git_branch = Some(branch.to_string());
                 }
             }
-            Some("user.message") | Some("assistant.message") => {
+            Some("user.message") | Some("assistant.message") | Some("tool.execution_complete") => {
                 count += 1;
             }
             _ => {}
@@ -220,6 +220,26 @@ pub fn parse_copilot_event_pub(record: &Value) -> Option<Message> {
                 timestamp,
             })
         }
+        "tool.execution_complete" => {
+            let tool_use_id = data["toolCallId"].as_str().unwrap_or("").to_string();
+            if tool_use_id.is_empty() {
+                return None;
+            }
+            let content = match &data["result"] {
+                Value::Object(_) => data["result"]["content"].as_str().unwrap_or("").to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::new(),
+            };
+            Some(Message {
+                index: 0,
+                role: Role::User,
+                content: MessageContent::Parts(vec![ContentPart::ToolResult {
+                    tool_use_id,
+                    content,
+                }]),
+                timestamp,
+            })
+        }
         _ => None,
     }
 }
@@ -265,6 +285,70 @@ mod tests {
         )
         .unwrap();
         assert!(parse_copilot_event_pub(&record).is_none());
+    }
+
+    #[test]
+    fn test_parse_tool_execution_complete() {
+        let record: Value = serde_json::from_str(
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"tooluse_abc123","success":true,"result":{"content":"file.txt\nother.txt","detailedContent":"diff output"}},"timestamp":"2026-02-24T21:02:00Z","id":"z"}"#,
+        )
+        .unwrap();
+        let msg = parse_copilot_event_pub(&record).unwrap();
+        assert_eq!(msg.role, Role::User);
+        match &msg.content {
+            MessageContent::Parts(parts) => {
+                assert_eq!(parts.len(), 1);
+                match &parts[0] {
+                    ContentPart::ToolResult {
+                        tool_use_id,
+                        content,
+                    } => {
+                        assert_eq!(tool_use_id, "tooluse_abc123");
+                        assert_eq!(content, "file.txt\nother.txt");
+                    }
+                    _ => panic!("expected ToolResult"),
+                }
+            }
+            _ => panic!("expected Parts"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_execution_complete_missing_tool_call_id_skipped() {
+        let record: Value = serde_json::from_str(
+            r#"{"type":"tool.execution_complete","data":{"success":true,"result":{"content":"output"}},"timestamp":"2026-02-24T21:02:00Z","id":"z"}"#,
+        )
+        .unwrap();
+        assert!(parse_copilot_event_pub(&record).is_none());
+    }
+
+    #[test]
+    fn test_parse_tool_execution_complete_empty_result_content() {
+        let record: Value = serde_json::from_str(
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"tooluse_xyz","success":true,"result":{}},"timestamp":"2026-02-24T21:02:00Z","id":"z"}"#,
+        )
+        .unwrap();
+        let msg = parse_copilot_event_pub(&record).unwrap();
+        match &msg.content {
+            MessageContent::Parts(parts) => match &parts[0] {
+                ContentPart::ToolResult { content, .. } => assert_eq!(content, ""),
+                _ => panic!(),
+            },
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_read_events_metadata_counts_tool_executions() {
+        let file = make_events_jsonl(&[
+            r#"{"type":"session.start","data":{"context":{"branch":"main"}},"timestamp":"2026-02-24T21:00:00Z","id":"a"}"#,
+            r#"{"type":"user.message","data":{"content":"hello"},"timestamp":"2026-02-24T21:01:00Z","id":"b"}"#,
+            r#"{"type":"assistant.message","data":{"content":"hi","toolRequests":[{"name":"bash","arguments":{},"toolCallId":"t1"}]},"timestamp":"2026-02-24T21:02:00Z","id":"c"}"#,
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","success":true,"result":{"content":"ok"}},"timestamp":"2026-02-24T21:03:00Z","id":"d"}"#,
+        ]);
+        let (branch, count) = read_events_metadata(&file.path().to_path_buf());
+        assert_eq!(branch.as_deref(), Some("main"));
+        assert_eq!(count, 3); // user.message + assistant.message + tool.execution_complete
     }
 
     #[test]
