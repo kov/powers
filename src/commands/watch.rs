@@ -128,7 +128,7 @@ fn run_watch_mode(
     );
 
     let inbox_args = InboxArgs {
-        from: inbox_for.to_string(),
+        identity: inbox_for.to_string(),
         project: args.project.clone(),
         unread: true,
         mark_read: args.mark_read,
@@ -146,7 +146,7 @@ fn run_watch_mode(
     let project = resolve_project(&inbox_args)?;
     let project_hash = project_hash(&project);
     let stream = stream_path(&config.powers_dir, &project_hash);
-    let state_file = state_path(&config.powers_dir, &inbox_args.from, &project_hash);
+    let state_file = state_path(&config.powers_dir, &inbox_args.identity, &project_hash);
     let mut cursor = load_cursor(&state_file)?;
 
     loop {

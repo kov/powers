@@ -138,12 +138,12 @@ powers show 019c7584 --from 42 --to 55
 ## Agent Collaboration
 
 `powers` supports real-time messaging between agents via a project-scoped stream.
-Always pass `--from` explicitly — multiple agents share the same user account.
+Always pass `--identity` explicitly — multiple agents share the same user account.
 Use explicit literal project paths in commands. Do not use shell variables such as `$PWD` or `$HOME`.
 
 ```
-powers post    --from AGENT [--to AGENT] [--kind KIND] [--project PATH] --message TEXT
-powers inbox   --from AGENT [--project PATH] [--unread] [--mark-read] [--wait] [--timeout N] [--follow] [--since YYYY-MM-DD] [--last N] [--format table|json]
+powers post    --identity AGENT [--to AGENT] [--kind KIND] [--project PATH] --message TEXT
+powers inbox   --identity AGENT [--project PATH] [--unread] [--mark-read] [--wait] [--timeout N] [--follow] [--since YYYY-MM-DD] [--last N] [--format table|json]
 powers watch   <SESSION> [--inbox-for AGENT] [--project PATH] [--no-tool-calls] [--role user|assistant|all] [--from-start] [--poll-ms N] [--mark-read] [--width N]
 ```
 
@@ -184,7 +184,7 @@ start of each task and before your final response — this catches messages that
 arrived while you were inactive:
 
 ```bash
-powers inbox --from <you> --project /path/to/project --unread --mark-read
+powers inbox --identity <you> --project /path/to/project --unread --mark-read
 ```
 
 ### Active collaboration (ping-pong within a turn)
@@ -201,8 +201,8 @@ polling loop needed — just a single foreground Bash call.
 
 **Canonical pattern:**
 ```bash
-powers post --from <you> --to <them> --project /path/to/project --message "..."
-powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout N
+powers post --identity <you> --to <them> --project /path/to/project --message "..."
+powers inbox --identity <you> --project /path/to/project --unread --mark-read --wait --timeout N
 ```
 
 **Choosing `--timeout`:**
@@ -227,10 +227,10 @@ interim, then act accordingly:
 powers watch <their-session> --no-tool-calls
 
 # Heartbeat so they know you're still around
-powers post --from <you> --to <them> --project /path/to/project --kind status \
+powers post --identity <you> --to <them> --project /path/to/project --kind status \
   --message "Still waiting — no reply yet, will wait another 5 min"
 
-powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout 300
+powers inbox --identity <you> --project /path/to/project --unread --mark-read --wait --timeout 300
 ```
 
 > **Limit active wait to cases where you genuinely cannot proceed without a
@@ -241,7 +241,7 @@ powers inbox --from <you> --project /path/to/project --unread --mark-read --wait
 Agents share the same filesystem, so there's no need to paste a full plan or
 diff into a message:
 ```bash
-powers post --from claude --to codex --project /path/to/project \
+powers post --identity claude --to codex --project /path/to/project \
   --message "Plan at /home/kov/.claude/plans/my-plan.md — please implement"
 ```
 
@@ -271,7 +271,7 @@ for Codex when active ping-pong collaboration is requested.
 
 2. Mandatory blocking wait:
    In `state=awaiting_peer`, immediately run:
-   `powers inbox --from <you> --project /path/to/project --unread --mark-read --wait --timeout 300`
+   `powers inbox --identity <you> --project /path/to/project --unread --mark-read --wait --timeout 300`
    After every outbound `powers post`, run the same blocking wait command again.
 
 3. Final-response gate:
@@ -291,19 +291,19 @@ for Codex when active ping-pong collaboration is requested.
 
 6. Pre-final inbox boundary:
    Immediately before any final response, run:
-   `powers inbox --from <you> --project /path/to/project --unread --mark-read`
+   `powers inbox --identity <you> --project /path/to/project --unread --mark-read`
 
 ## Copilot CLI: Collaboration Contract
 
 Copilot CLI uses the identity string `copilot` for all collaboration commands.
-Always pass `--from copilot` explicitly.
+Always pass `--identity copilot` explicitly.
 
 ### Boundary polling
 
 At the start of each task and before your final response, check for unread messages:
 
 ```bash
-powers inbox --from copilot --project /path/to/project --unread --mark-read
+powers inbox --identity copilot --project /path/to/project --unread --mark-read
 ```
 
 ### Active ping-pong collaboration
@@ -313,10 +313,10 @@ the same turn:
 
 ```bash
 # Assign the task
-powers post --from copilot --to codex --project /path/to/project --message "..."
+powers post --identity copilot --to codex --project /path/to/project --message "..."
 
 # Block until reply (empty stdout = timeout)
-powers inbox --from copilot --project /path/to/project --unread --mark-read --wait --timeout 300
+powers inbox --identity copilot --project /path/to/project --unread --mark-read --wait --timeout 300
 ```
 
 Use the same timeout guidance as the general collaboration section above.

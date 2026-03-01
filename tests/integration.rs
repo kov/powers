@@ -389,7 +389,7 @@ fn post_and_inbox_show_targeted_and_broadcast_messages() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "post",
-            "--from",
+            "--identity",
             "claude",
             "--to",
             "codex",
@@ -405,7 +405,7 @@ fn post_and_inbox_show_targeted_and_broadcast_messages() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "post",
-            "--from",
+            "--identity",
             "claude",
             "--project",
             "/test/project",
@@ -419,7 +419,7 @@ fn post_and_inbox_show_targeted_and_broadcast_messages() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -443,7 +443,7 @@ fn inbox_mark_read_advances_cursor() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "post",
-            "--from",
+            "--identity",
             "claude",
             "--to",
             "codex",
@@ -459,7 +459,7 @@ fn inbox_mark_read_advances_cursor() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -474,7 +474,7 @@ fn inbox_mark_read_advances_cursor() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -498,7 +498,7 @@ fn inbox_last_limits_visible_output() {
         let out = powers_with_state_dir(&state_dir)
             .args([
                 "post",
-                "--from",
+                "--identity",
                 "claude",
                 "--to",
                 "codex",
@@ -515,7 +515,7 @@ fn inbox_last_limits_visible_output() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -539,7 +539,7 @@ fn inbox_wait_exits_immediately_if_message_present() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "post",
-            "--from",
+            "--identity",
             "claude",
             "--to",
             "codex",
@@ -556,7 +556,7 @@ fn inbox_wait_exits_immediately_if_message_present() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -581,7 +581,7 @@ fn inbox_wait_timeout_exits_with_no_output() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",
@@ -607,7 +607,7 @@ fn inbox_format_json_outputs_jsonl_records() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "post",
-            "--from",
+            "--identity",
             "claude",
             "--to",
             "codex",
@@ -625,7 +625,7 @@ fn inbox_format_json_outputs_jsonl_records() {
     let out = powers_with_state_dir(&state_dir)
         .args([
             "inbox",
-            "--from",
+            "--identity",
             "codex",
             "--project",
             "/test/project",

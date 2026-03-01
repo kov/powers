@@ -23,7 +23,7 @@ pub fn run(args: &InboxArgs) -> Result<()> {
     let project = resolve_project(args)?;
     let project_hash = project_hash(&project);
     let stream = stream_path(&config.powers_dir, &project_hash);
-    let state_file = state_path(&config.powers_dir, &args.from, &project_hash);
+    let state_file = state_path(&config.powers_dir, &args.identity, &project_hash);
 
     let mut cursor = load_cursor(&state_file)?;
     if args.follow && !args.unread {
@@ -303,7 +303,7 @@ pub(crate) fn read_stream(
 
 fn visible_to_reader(msg: &StreamMessage, args: &InboxArgs) -> bool {
     match msg.to.as_deref() {
-        Some(target) => target == args.from,
+        Some(target) => target == &args.identity,
         None => true,
     }
 }

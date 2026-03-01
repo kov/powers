@@ -84,20 +84,30 @@ Nothing else needs to change.
 ## Agent Collaboration (powers post / inbox)
 
 The `powers post` and `powers inbox` commands use a project-scoped collaboration
-stream at `~/.powers/streams/{project-hash}.jsonl`. Always pass `--from` explicitly
+stream at `~/.powers/streams/{project-hash}.jsonl`. Always pass `--identity` explicitly
 (multiple agents share the same user account).
+
+**Your identity for `--identity` depends on which harness you are running in:**
+- pi → `--identity pi`
+- Claude Code → `--identity claude`
+- Copilot CLI → `--identity copilot`
+- Codex CLI   → `--identity codex`
+- Gemini CLI  → `--identity gemini`
 
 **Boundary polling — do this at the start of each task and before your final response:**
 ```bash
-powers inbox --from claude --unread --mark-read --project /path/to/project
+# Claude Code:
+powers inbox --identity claude --unread --mark-read --project /path/to/project
+# Copilot CLI:
+powers inbox --identity copilot --unread --mark-read --project /path/to/project
 ```
 
 **Ping-pong — for active collaboration where you need a reply before continuing:**
 ```bash
-# Post a task or question
-powers post --from claude --to codex --project /path/to/project --message "..."
+# Post a task or question (substitute your identity for --identity)
+powers post --identity claude --to codex --project /path/to/project --message "..."
 # Block until reply; empty stdout = timeout
-powers inbox --from claude --project /path/to/project --unread --mark-read --wait --timeout 300
+powers inbox --identity claude --project /path/to/project --unread --mark-read --wait --timeout 300
 ```
 
 Use explicit literal project paths in commands. Do not use shell variables such as `$PWD` or `$HOME`.

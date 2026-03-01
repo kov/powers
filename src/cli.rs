@@ -129,7 +129,7 @@ pub struct InfoArgs {
 pub struct PostArgs {
     /// Sender identity (for example: claude, codex, gemini)
     #[arg(long)]
-    pub from: String,
+    pub identity: String,
 
     /// Optional recipient identity. If absent, message is broadcast.
     #[arg(long)]
@@ -156,7 +156,7 @@ pub struct PostArgs {
 pub struct InboxArgs {
     /// Reader identity (for example: claude, codex, gemini)
     #[arg(long)]
-    pub from: String,
+    pub identity: String,
 
     /// Project path (defaults to current working directory)
     #[arg(long)]

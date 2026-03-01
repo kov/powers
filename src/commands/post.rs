@@ -26,7 +26,7 @@ pub fn run(args: &PostArgs) -> Result<()> {
     let msg = StreamMessage {
         id: message_id(),
         ts: Utc::now(),
-        from: args.from.trim().to_string(),
+        from: args.identity.trim().to_string(),
         to: args.to.as_ref().map(|s| s.trim().to_string()),
         kind: args.kind.trim().to_string(),
         body,
