@@ -1,12 +1,12 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use chrono::Utc;
 use std::fs::OpenOptions;
 use std::io::{IsTerminal, Read, Write};
-use std::path::PathBuf;
 
 use crate::cli::PostArgs;
 use crate::collab::{
-    StreamMessage, acquire_lock, ensure_parent_dir, lock_path_for_stream, project_hash, stream_path,
+    StreamMessage, acquire_lock, ensure_parent_dir, lock_path_for_stream, project_hash,
+    resolve_project, stream_path,
 };
 use crate::config::Config;
 use crate::output;
@@ -43,13 +43,6 @@ pub fn run(args: &PostArgs) -> Result<()> {
 
     output::print_post_result(&msg);
     Ok(())
-}
-
-fn resolve_project(project: &Option<PathBuf>) -> Result<PathBuf> {
-    match project {
-        Some(path) => Ok(path.clone()),
-        None => std::env::current_dir().context("cannot determine current working directory"),
-    }
 }
 
 fn read_message_body(args: &PostArgs) -> Result<String> {

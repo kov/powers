@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -29,6 +29,13 @@ pub struct CursorState {
     pub last_msg_id: Option<String>,
     pub stream_inode: Option<u64>,
     pub stream_size_seen: u64,
+}
+
+pub fn resolve_project(project: &Option<PathBuf>) -> Result<PathBuf> {
+    match project {
+        Some(path) => Ok(path.clone()),
+        None => std::env::current_dir().context("cannot determine current working directory"),
+    }
 }
 
 pub fn project_hash(path: &Path) -> String {

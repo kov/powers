@@ -28,6 +28,8 @@ pub enum Commands {
     Watch(WatchArgs),
     /// Show one tool result by tool use ID
     ToolResult(ToolResultArgs),
+    /// Clear the collaboration stream for a project
+    Clear(ClearArgs),
 }
 
 #[derive(clap::Args)]
@@ -310,6 +312,21 @@ pub struct ToolResultArgs {
     /// Maximum bytes to print from resolved output body
     #[arg(long, default_value = "65536")]
     pub max_bytes: usize,
+}
+
+#[derive(clap::Args)]
+pub struct ClearArgs {
+    /// Project path (defaults to current working directory)
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
+    /// Skip confirmation prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Delete only the stream file; leave per-agent cursor state intact
+    #[arg(long)]
+    pub keep_cursors: bool,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]

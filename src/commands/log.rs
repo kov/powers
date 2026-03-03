@@ -2,12 +2,12 @@ use anyhow::Result;
 use chrono::{NaiveDate, Timelike};
 use std::fs::{File, metadata};
 use std::io::{BufRead, BufReader, IsTerminal, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
 use crate::cli::LogArgs;
-use crate::collab::{CursorState, StreamMessage, project_hash, stream_inode, stream_path};
+use crate::collab::{CursorState, StreamMessage, project_hash, resolve_project, stream_inode, stream_path};
 use crate::config::Config;
 use crate::output;
 
@@ -38,7 +38,7 @@ struct StreamMeta {
 
 pub fn run(args: &LogArgs) -> Result<()> {
     let config = Config::load();
-    let project = resolve_project_path(&args.project)?;
+    let project = resolve_project(&args.project)?;
     let hash = project_hash(&project);
     let stream = stream_path(&config.powers_dir, &hash);
     let state_root = config.powers_dir.join("state");
@@ -114,13 +114,6 @@ pub fn run(args: &LogArgs) -> Result<()> {
         }
 
         thread::sleep(Duration::from_millis(sleep_ms));
-    }
-}
-
-fn resolve_project_path(project: &Option<PathBuf>) -> Result<PathBuf> {
-    match project {
-        Some(path) => Ok(path.clone()),
-        None => Ok(std::env::current_dir()?),
     }
 }
 

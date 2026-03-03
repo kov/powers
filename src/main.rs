@@ -23,6 +23,7 @@ fn main() {
         Commands::Log(args) => commands::log::run(args),
         Commands::Watch(args) => commands::watch::run(args),
         Commands::ToolResult(args) => commands::tool_result::run(args),
+        Commands::Clear(args) => commands::clear::run(args),
     };
 
     if let Err(e) = result {

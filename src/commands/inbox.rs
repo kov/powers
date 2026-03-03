@@ -303,7 +303,7 @@ pub(crate) fn read_stream(
 
 fn visible_to_reader(msg: &StreamMessage, args: &InboxArgs) -> bool {
     match msg.to.as_deref() {
-        Some(target) => target == &args.identity,
+        Some(target) => target == args.identity,
         None => true,
     }
 }

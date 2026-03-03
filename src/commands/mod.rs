@@ -1,3 +1,4 @@
+pub mod clear;
 pub mod inbox;
 pub mod info;
 pub mod list;
