@@ -87,6 +87,11 @@ pub struct SearchArgs {
     /// Output only session IDs (one per line, first match per session)
     #[arg(long)]
     pub session_only: bool,
+
+    /// Also search inside tool-call inputs (Edit diffs, Write content, Bash commands, ...).
+    /// Off by default — tool-call JSON is noisy and contains escaped whitespace.
+    #[arg(long)]
+    pub include_tool_calls: bool,
 }
 
 #[derive(clap::Args)]
@@ -129,6 +134,11 @@ pub struct ShowArgs {
     /// Maximum bytes to print for expanded tool output
     #[arg(long, default_value = "8192")]
     pub max_bytes: usize,
+
+    /// Pretty-print tool call inputs multi-line (Edit diffs, full Bash commands, etc.)
+    /// instead of the default single-line truncated JSON preview
+    #[arg(long)]
+    pub expand_tool_calls: bool,
 }
 
 #[derive(clap::Args)]
@@ -255,6 +265,11 @@ pub struct WatchArgs {
     /// Wrap output at this width (default: terminal width)
     #[arg(long)]
     pub width: Option<usize>,
+
+    /// Pretty-print tool call inputs multi-line (Edit diffs, full Bash commands, etc.)
+    /// instead of the default single-line truncated JSON preview
+    #[arg(long)]
+    pub expand_tool_calls: bool,
 }
 
 #[derive(clap::Args)]

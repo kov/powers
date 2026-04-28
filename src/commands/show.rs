@@ -23,6 +23,7 @@ pub fn run(args: &ShowArgs) -> Result<()> {
     let render_opts = MessageRenderOptions {
         expand_persisted: args.expand_persisted,
         max_bytes: args.max_bytes,
+        expand_tool_calls: args.expand_tool_calls,
     };
 
     // Apply role filter

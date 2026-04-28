@@ -166,7 +166,7 @@ fn search_jsonl(
         msg_index += 1;
 
         // Re-check after parsing (raw pre-filter may have false positives from JSON keys)
-        let text = msg.content.extract_text();
+        let text = msg.content.extract_searchable_text(args.include_tool_calls);
         let is_match = pattern.is_match(&text);
 
         if post_ctx_remaining > 0 {
@@ -329,7 +329,7 @@ fn search_gemini(
     let mut found_in_session = false;
 
     for msg in &session.messages {
-        let text = msg.content.extract_text();
+        let text = msg.content.extract_searchable_text(args.include_tool_calls);
         let is_match = pattern.is_match(&text);
 
         if post_ctx_remaining > 0 {

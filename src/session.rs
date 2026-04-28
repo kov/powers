@@ -74,6 +74,13 @@ pub enum MessageContent {
 
 impl MessageContent {
     pub fn extract_text(&self) -> String {
+        self.extract_searchable_text(false)
+    }
+
+    /// Like `extract_text`, but optionally includes the raw JSON of tool-call inputs
+    /// so searches can match text the assistant wrote inside Edit/Write/Bash args.
+    /// Tool results are still excluded (they contain noisy log output).
+    pub fn extract_searchable_text(&self, include_tool_calls: bool) -> String {
         match self {
             MessageContent::Text(s) => s.clone(),
             MessageContent::Parts(parts) => parts
@@ -81,6 +88,9 @@ impl MessageContent {
                 .filter_map(|p| match p {
                     ContentPart::Text(t) => Some(t.as_str()),
                     ContentPart::Thinking(t) => Some(t.as_str()),
+                    ContentPart::ToolCall { input, .. } if include_tool_calls => {
+                        Some(input.as_str())
+                    }
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -165,6 +175,26 @@ mod tests {
             ContentPart::Text("world".to_string()),
         ]);
         assert_eq!(content.extract_text(), "hello\nworld");
+    }
+
+    #[test]
+    fn test_extract_searchable_text_includes_tool_calls() {
+        let content = MessageContent::Parts(vec![
+            ContentPart::Text("hello".to_string()),
+            ContentPart::ToolCall {
+                name: "Edit".to_string(),
+                input: r#"{"new_string":"fn foo() {}"}"#.to_string(),
+            },
+            ContentPart::ToolResult {
+                tool_use_id: "x".to_string(),
+                content: "noisy log line".to_string(),
+            },
+        ]);
+        assert_eq!(content.extract_searchable_text(false), "hello");
+        let with_tools = content.extract_searchable_text(true);
+        assert!(with_tools.contains("hello"));
+        assert!(with_tools.contains("fn foo"));
+        assert!(!with_tools.contains("noisy log line"));
     }
 
     #[test]

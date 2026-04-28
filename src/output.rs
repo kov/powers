@@ -8,6 +8,7 @@ use crate::session::{ContentPart, Message, MessageContent, SessionMeta};
 pub struct MessageRenderOptions {
     pub expand_persisted: bool,
     pub max_bytes: usize,
+    pub expand_tool_calls: bool,
 }
 
 impl Default for MessageRenderOptions {
@@ -15,6 +16,7 @@ impl Default for MessageRenderOptions {
         Self {
             expand_persisted: false,
             max_bytes: 8192,
+            expand_tool_calls: false,
         }
     }
 }
@@ -181,10 +183,13 @@ fn print_message_content(content: &MessageContent, width: usize, opts: MessageRe
                         print_wrapped(s, width, "    ");
                     }
                     ContentPart::ToolCall { name, input } => {
-                        println!("  [tool_call: {}]", name);
-                        // Print first line of input only for brevity
-                        let preview = input.lines().next().unwrap_or("").trim();
-                        println!("    {}", truncate(preview, width.saturating_sub(4)));
+                        if opts.expand_tool_calls {
+                            render_tool_call(name, input, width);
+                        } else {
+                            println!("  [tool_call: {}]", name);
+                            let preview = input.lines().next().unwrap_or("").trim();
+                            println!("    {}", truncate(preview, width.saturating_sub(4)));
+                        }
                     }
                     ContentPart::ToolResult {
                         tool_use_id,
@@ -241,6 +246,104 @@ fn print_message_content(content: &MessageContent, width: usize, opts: MessageRe
                 }
             }
         }
+    }
+}
+
+fn render_tool_call(name: &str, input: &str, width: usize) {
+    let parsed: Option<serde_json::Value> = serde_json::from_str(input).ok();
+    match (name, parsed.as_ref()) {
+        ("Edit", Some(v)) => render_edit_call(v, width),
+        ("MultiEdit", Some(v)) => render_multi_edit_call(v, width),
+        ("Write", Some(v)) => render_write_call(v, width),
+        ("Read" | "NotebookRead", Some(v)) => render_read_call(name, v),
+        ("Bash", Some(v)) => render_bash_call(v, width),
+        _ => render_generic_call(name, input, width),
+    }
+}
+
+fn render_generic_call(name: &str, input: &str, width: usize) {
+    println!("  [tool_call: {}]", name);
+    let pretty = serde_json::from_str::<serde_json::Value>(input)
+        .ok()
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+        .unwrap_or_else(|| input.to_string());
+    print_wrapped(&pretty, width, "    ");
+}
+
+fn render_edit_call(v: &serde_json::Value, width: usize) {
+    let file_path = v["file_path"].as_str().unwrap_or("-");
+    let replace_all = v["replace_all"].as_bool().unwrap_or(false);
+    let suffix = if replace_all { " (replace_all)" } else { "" };
+    println!("  [tool_call: Edit{}] {}", suffix, file_path);
+    render_diff(
+        v["old_string"].as_str().unwrap_or(""),
+        v["new_string"].as_str().unwrap_or(""),
+        width,
+    );
+}
+
+fn render_multi_edit_call(v: &serde_json::Value, width: usize) {
+    let file_path = v["file_path"].as_str().unwrap_or("-");
+    let empty = Vec::new();
+    let edits = v["edits"].as_array().unwrap_or(&empty);
+    let plural = if edits.len() == 1 { "" } else { "s" };
+    println!(
+        "  [tool_call: MultiEdit] {} ({} edit{})",
+        file_path,
+        edits.len(),
+        plural
+    );
+    for (i, edit) in edits.iter().enumerate() {
+        let replace_all = edit["replace_all"].as_bool().unwrap_or(false);
+        let suffix = if replace_all { " (replace_all)" } else { "" };
+        println!("    --- edit {}/{}{} ---", i + 1, edits.len(), suffix);
+        render_diff(
+            edit["old_string"].as_str().unwrap_or(""),
+            edit["new_string"].as_str().unwrap_or(""),
+            width,
+        );
+    }
+}
+
+fn render_write_call(v: &serde_json::Value, width: usize) {
+    let file_path = v["file_path"].as_str().unwrap_or("-");
+    println!("  [tool_call: Write] {}", file_path);
+    let content = v["content"].as_str().unwrap_or("");
+    if !content.is_empty() {
+        print_wrapped(content, width, "    + ");
+    }
+}
+
+fn render_read_call(name: &str, v: &serde_json::Value) {
+    let file_path = v["file_path"].as_str().unwrap_or("-");
+    let mut line = format!("  [tool_call: {}] {}", name, file_path);
+    if let Some(offset) = v["offset"].as_u64() {
+        line.push_str(&format!(" offset={}", offset));
+    }
+    if let Some(limit) = v["limit"].as_u64() {
+        line.push_str(&format!(" limit={}", limit));
+    }
+    println!("{}", line);
+}
+
+fn render_bash_call(v: &serde_json::Value, width: usize) {
+    if let Some(desc) = v["description"].as_str() {
+        println!("  [tool_call: Bash] {}", desc);
+    } else {
+        println!("  [tool_call: Bash]");
+    }
+    let command = v["command"].as_str().unwrap_or("");
+    if !command.is_empty() {
+        print_wrapped(command, width, "    $ ");
+    }
+}
+
+fn render_diff(old: &str, new: &str, width: usize) {
+    if !old.is_empty() {
+        print_wrapped(old, width, "    - ");
+    }
+    if !new.is_empty() {
+        print_wrapped(new, width, "    + ");
     }
 }
 

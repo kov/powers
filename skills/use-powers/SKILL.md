@@ -13,9 +13,9 @@ without blowing up your context window.
 
 ```
 powers list    [--tool claude|codex|gemini|copilot] [--project PATH] [--since YYYY-MM-DD] [--limit N] [--format table|tsv]
-powers search  <PATTERN> [--tool ...] [--project ...] [--since ...] [--context N] [--max-matches N] [--case-sensitive] [--session-only]
+powers search  <PATTERN> [--tool ...] [--project ...] [--since ...] [--context N] [--max-matches N] [--case-sensitive] [--session-only] [--include-tool-calls]
 powers info    <SESSION>
-powers show    <SESSION> [--last N] [--first N] [--from N] [--to N] [--role user|assistant|all] [--no-tool-calls] [--width N]
+powers show    <SESSION> [--last N] [--first N] [--from N] [--to N] [--role user|assistant|all] [--no-tool-calls] [--expand-tool-calls] [--width N]
 ```
 
 `SESSION` is a UUID prefix of at least 8 characters. Powers warns if ambiguous.
@@ -118,6 +118,55 @@ Use `--format tsv` for scripting.
 The `[N]` index is the message's original 0-based position in the full session,
 stable across different `--role` filters. Use `--role all` (default) when you
 need to use the index with `--from`/`--to`.
+
+By default, tool call inputs render as a single truncated JSON line — cheap to
+scan but opaque for edits. Pass `--expand-tool-calls` to get multi-line output:
+`Edit`/`MultiEdit` become `-`/`+` diffs, `Bash` prints the full shell command,
+`Write`/`Read` show file paths + content/offset, and other tools fall back to
+pretty-printed JSON.
+
+## Example: Finding What a Specific Edit Changed
+
+Use the default (truncated) output to locate the edit, then re-run with
+`--expand-tool-calls` on just that range so you see the full diff without
+drowning in every other tool call.
+
+```bash
+# 1. Scan the session with truncated tool calls to find the edit — cheap
+powers show 5241ab6c --last 80 | grep -n 'tool_call: Edit'
+# →  113:  [tool_call: Edit]  (msg index 198 nearby)
+#    247:  [tool_call: Edit]  (msg index 214 nearby)
+
+# 2. Expand only the range around the edit you care about
+powers show 5241ab6c --from 213 --to 216 --expand-tool-calls
+```
+
+The second command renders the old/new strings as a diff so you can actually
+read what changed, while keeping the slice small enough to stay in context.
+
+## Example: Recovering Code You Wrote in a Previous Session
+
+If you wrote a function (or any other code) in a past session and want to find
+it, plain `search` won't match — it scans only prose and thinking, not tool-call
+inputs like `Edit.new_string` or `Write.content`. Pass `--include-tool-calls`:
+
+```bash
+# 1. Find which session + message contains the function
+powers search "fn gadgets_persist_through" --include-tool-calls --context 0 --session-only
+# → 290829a8-b9b2-4f58-9a80-5b2e2ef42575
+
+powers search "fn gadgets_persist_through" --include-tool-calls --context 0
+# → [msg 368 / assistant / ...]
+
+# 2. Expand the full diff for that message
+powers show 290829a8 --from 368 --to 368 --expand-tool-calls
+```
+
+`--include-tool-calls` searches against the raw JSON of each tool call, so
+regexes that span newlines won't work cleanly (JSON-escaped `\n` is two literal
+characters, not whitespace). Stick to identifier-style patterns. Tool *results*
+(command output, file reads) are still excluded — they would drown the signal
+in log noise.
 
 ## Example: Continuing Another Agent's Work
 
