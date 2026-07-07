@@ -73,7 +73,15 @@ fn list_filter_by_project() {
 #[test]
 fn list_tsv_format_has_no_header() {
     let out = powers()
-        .args(["list", "--format", "tsv", "--tool", "claude"])
+        .args([
+            "list",
+            "--format",
+            "tsv",
+            "--tool",
+            "claude",
+            "--project",
+            "/test/project",
+        ])
         .output()
         .unwrap();
     let s = stdout(&out);
@@ -89,13 +97,22 @@ fn list_tsv_format_has_no_header() {
 #[test]
 fn list_message_count_is_correct() {
     let out = powers()
-        .args(["list", "--tool", "claude", "--format", "tsv"])
+        .args([
+            "list",
+            "--tool",
+            "claude",
+            "--project",
+            "/test/project",
+            "--format",
+            "tsv",
+        ])
         .output()
         .unwrap();
     let s = stdout(&out);
     // fixture has 6 user+assistant messages (progress line is skipped)
+    // TSV columns: id, tool, project, date, count, title, last_prompt
     let fields: Vec<&str> = s.lines().next().unwrap().split('\t').collect();
-    let count: usize = fields.last().unwrap().trim().parse().unwrap();
+    let count: usize = fields[4].trim().parse().unwrap();
     assert_eq!(count, 6, "wrong message count: {s}");
 }
 
@@ -696,7 +713,7 @@ fn list_copilot_message_count() {
         "expected copilot session first: {first_row}"
     );
     let fields: Vec<&str> = first_row.split('\t').collect();
-    let count: usize = fields.last().unwrap().trim().parse().unwrap();
+    let count: usize = fields[4].trim().parse().unwrap();
     assert_eq!(
         count, 7,
         "expected 7 messages (3 user + 3 assistant + 1 tool result): {s}"
@@ -718,7 +735,7 @@ fn list_copilot_legacy_session_has_zero_messages() {
         .unwrap_or("");
     assert!(!legacy_row.is_empty(), "legacy session missing: {s}");
     let fields: Vec<&str> = legacy_row.split('\t').collect();
-    let count: usize = fields.last().unwrap().trim().parse().unwrap();
+    let count: usize = fields[4].trim().parse().unwrap();
     assert_eq!(count, 0, "legacy session should have 0 messages: {s}");
 }
 
@@ -823,4 +840,256 @@ fn tool_result_finds_and_resolves_persisted_output() {
     );
     assert!(s.contains("persisted_path:"), "persisted path missing: {s}");
     assert!(s.contains("banana line 1"), "resolved content missing: {s}");
+}
+
+// ── Batch A: search normalization + list metadata ─────────────────────────────
+
+/// Count `[msg ...]` lines in search output (one per reported match at -C 0).
+fn match_lines(s: &str) -> usize {
+    s.lines().filter(|l| l.starts_with("[msg ")).count()
+}
+
+#[test]
+fn search_is_literal_by_default() {
+    // `total(count)` contains regex metacharacters; a literal search must find it.
+    let out = powers()
+        .args([
+            "search",
+            "total(count)",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "literal search failed: {s}");
+    assert_eq!(match_lines(s), 1, "expected one literal match: {s}");
+}
+
+#[test]
+fn search_regex_flag_enables_metacharacters() {
+    // As a regex, `total(count)` is a group and matches the substring `totalcount`,
+    // which does not appear — so the regex search finds nothing here.
+    let out = powers()
+        .args([
+            "search",
+            "total(count)",
+            "--regex",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "regex search failed: {s}");
+    assert_eq!(
+        match_lines(s),
+        0,
+        "regex group should not match literal: {s}"
+    );
+}
+
+#[test]
+fn search_unbalanced_bracket_is_literal_not_error() {
+    // Previously this errored as an invalid regex; now it is a literal substring.
+    let out = powers()
+        .args([
+            "search",
+            "count)",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "literal search with metachar must not error: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn search_excludes_meta_rows() {
+    let out = powers()
+        .args([
+            "search",
+            "hippopotamus",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert_eq!(match_lines(s), 0, "isMeta row should be excluded: {s}");
+}
+
+#[test]
+fn search_strips_system_reminders() {
+    // Text inside a <system-reminder> must not match...
+    let hidden = powers()
+        .args([
+            "search",
+            "kangaroo",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&hidden)),
+        0,
+        "reminder text should not match: {}",
+        stdout(&hidden)
+    );
+    // ...but the surrounding real prose still does.
+    let visible = powers()
+        .args([
+            "search",
+            "visible prose",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&visible)),
+        1,
+        "prose around reminder should still match: {}",
+        stdout(&visible)
+    );
+}
+
+#[test]
+fn search_dedupes_uuid_across_resumed_files() {
+    // The same message (uuid dup-uuid-0001) appears in two session files; it must
+    // be reported exactly once.
+    let out = powers()
+        .args([
+            "search",
+            "zebrafish",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert_eq!(
+        match_lines(s),
+        1,
+        "duplicate uuid should be reported once: {s}"
+    );
+}
+
+#[test]
+fn search_exclude_session_drops_matches() {
+    // Excluding the primary session leaves only the resumed-file copy.
+    let out = powers()
+        .args([
+            "search",
+            "zebrafish",
+            "--project",
+            "/batch/a",
+            "--exclude-session",
+            "cafe0001",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(
+        !s.contains("cafe0001"),
+        "excluded session should not appear: {s}"
+    );
+}
+
+#[test]
+fn list_shows_ai_title() {
+    let out = powers()
+        .args(["list", "--project", "/batch/a"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(
+        s.contains("Batch A Golden Session"),
+        "ai-title missing from list: {s}"
+    );
+}
+
+#[test]
+fn info_shows_ai_title() {
+    let out = powers().args(["info", "cafe0001"]).output().unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success(), "info failed: {s}");
+    assert!(s.contains("Title:"), "Title line missing: {s}");
+    assert!(
+        s.contains("Batch A Golden Session"),
+        "title text missing: {s}"
+    );
+}
+
+#[test]
+fn list_since_until_window_filters() {
+    // A wide window keeps sessions; an ancient upper bound drops them all.
+    let wide = powers()
+        .args(["list", "--since", "2000-01-01", "--until", "2099-12-31"])
+        .output()
+        .unwrap();
+    assert!(wide.status.success());
+    assert!(
+        stdout(&wide).contains("aaaaaaaa"),
+        "wide window should keep sessions: {}",
+        stdout(&wide)
+    );
+
+    let ancient = powers()
+        .args(["list", "--until", "2000-01-01", "--format", "tsv"])
+        .output()
+        .unwrap();
+    assert!(ancient.status.success());
+    assert!(
+        stdout(&ancient).trim().is_empty(),
+        "ancient --until should drop everything: {}",
+        stdout(&ancient)
+    );
+}
+
+#[test]
+fn list_relative_since_accepts_and_bad_value_errors() {
+    // Relative form parses without error.
+    let ok = powers().args(["list", "--since", "7d"]).output().unwrap();
+    assert!(
+        ok.status.success(),
+        "relative --since failed: {}",
+        stderr(&ok)
+    );
+    // Unparseable value fails loudly.
+    let bad = powers()
+        .args(["list", "--since", "not-a-time"])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success(), "bad --since should error");
+    assert!(
+        stderr(&bad).contains("could not parse time"),
+        "expected parse error: {}",
+        stderr(&bad)
+    );
 }

@@ -108,13 +108,39 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
 
     let session_id = session_id.context("No sessionId found in Claude JSONL")?;
 
-    // Count user+assistant messages with a quick scan
+    // Count user+assistant messages with a quick scan, and pick up the last
+    // ai-title / last-prompt records (regenerated over a session's life — keep
+    // the most recent). Meta rows are excluded from the count so it matches the
+    // number of messages `load`/`show` produce.
     let remaining = std::io::BufReader::new(std::fs::File::open(path)?);
     let mut count = 0usize;
+    let mut title: Option<String> = None;
+    let mut last_prompt: Option<String> = None;
     for line in remaining.lines() {
         let line = line.unwrap_or_default();
         if line.contains(r#""type":"user""#) || line.contains(r#""type":"assistant""#) {
+            // Only parse the rare lines that mention isMeta, and check the real
+            // top-level bool — so a message whose *content* quotes "isMeta":true
+            // is not miscounted (must match load_session / search exactly).
+            if line.contains(r#""isMeta""#)
+                && serde_json::from_str::<Value>(&line)
+                    .ok()
+                    .and_then(|r| r["isMeta"].as_bool())
+                    == Some(true)
+            {
+                continue;
+            }
             count += 1;
+        } else if line.contains(r#""type":"ai-title""#)
+            && let Ok(rec) = serde_json::from_str::<Value>(&line)
+            && let Some(t) = rec["aiTitle"].as_str()
+        {
+            title = Some(t.to_string());
+        } else if line.contains(r#""type":"last-prompt""#)
+            && let Ok(rec) = serde_json::from_str::<Value>(&line)
+            && let Some(p) = rec["lastPrompt"].as_str()
+        {
+            last_prompt = Some(p.to_string());
         }
     }
 
@@ -127,6 +153,8 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
         started_at,
         last_activity: mtime,
         message_count: count,
+        title,
+        last_prompt,
     })
 }
 
@@ -154,6 +182,12 @@ fn load_session(meta: &SessionMeta) -> Result<Session> {
             Some(t) => t,
             None => continue,
         };
+
+        // Skip injected meta rows (command echoes, injected context) so indices
+        // and counts reflect real conversation turns.
+        if record["isMeta"].as_bool() == Some(true) {
+            continue;
+        }
 
         let (role, content, timestamp) = match record_type {
             "user" => {
@@ -320,6 +354,8 @@ mod tests {
             started_at: Utc::now(),
             last_activity: Utc::now(),
             message_count: 2,
+            title: None,
+            last_prompt: None,
         };
 
         let session = load_session(&meta).unwrap();

@@ -42,9 +42,13 @@ pub struct ListArgs {
     #[arg(long)]
     pub project: Option<PathBuf>,
 
-    /// Filter sessions after this date (YYYY-MM-DD)
+    /// Only sessions active at or after this time (YYYY-MM-DD, RFC3339, or relative like 7d/24h/30m)
     #[arg(long)]
     pub since: Option<String>,
+
+    /// Only sessions active at or before this time (same formats as --since)
+    #[arg(long)]
+    pub until: Option<String>,
 
     /// Maximum number of sessions to show
     #[arg(long, default_value = "50")]
@@ -57,8 +61,12 @@ pub struct ListArgs {
 
 #[derive(clap::Args)]
 pub struct SearchArgs {
-    /// Pattern to search for (regex)
+    /// Pattern to search for (literal substring by default; use --regex for a regular expression)
     pub pattern: String,
+
+    /// Treat the pattern as a regular expression instead of a literal substring
+    #[arg(long)]
+    pub regex: bool,
 
     /// Filter by agent tool
     #[arg(long)]
@@ -68,9 +76,17 @@ pub struct SearchArgs {
     #[arg(long)]
     pub project: Option<PathBuf>,
 
-    /// Filter sessions after this date (YYYY-MM-DD)
+    /// Only sessions active at or after this time (YYYY-MM-DD, RFC3339, or relative like 7d/24h/30m)
     #[arg(long)]
     pub since: Option<String>,
+
+    /// Only sessions active at or before this time (same formats as --since)
+    #[arg(long)]
+    pub until: Option<String>,
+
+    /// Exclude a session by ID or prefix (e.g. your own live session)
+    #[arg(long)]
+    pub exclude_session: Option<String>,
 
     /// Lines of context around each match
     #[arg(long, default_value = "2", short = 'C')]

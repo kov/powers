@@ -45,6 +45,10 @@ pub struct SessionMeta {
     pub started_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub message_count: usize,
+    /// Agent-generated session title (Claude `ai-title`); None for tools that don't emit one.
+    pub title: Option<String>,
+    /// Most recent user prompt recorded for the session (Claude `last-prompt`).
+    pub last_prompt: Option<String>,
 }
 
 impl SessionMeta {
@@ -158,6 +162,8 @@ mod tests {
             started_at: Utc::now(),
             last_activity: Utc::now(),
             message_count: 0,
+            title: None,
+            last_prompt: None,
         };
         assert!(meta.matches_prefix("5241ab6c"));
         assert!(meta.matches_prefix("5241ab6c-5c33"));

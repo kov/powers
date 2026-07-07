@@ -110,6 +110,8 @@ fn discover_flat_session(path: &PathBuf) -> Result<SessionMeta> {
         started_at,
         last_activity: mtime,
         message_count: count,
+        title: None,
+        last_prompt: None,
     })
 }
 
@@ -167,6 +169,8 @@ fn discover_nested_session(path: &PathBuf) -> Result<SessionMeta> {
         started_at,
         last_activity: mtime,
         message_count: count,
+        title: None,
+        last_prompt: None,
     })
 }
 

@@ -101,6 +101,8 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
         started_at,
         last_activity: mtime,
         message_count,
+        title: None,
+        last_prompt: None,
     })
 }
 

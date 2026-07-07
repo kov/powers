@@ -7,7 +7,9 @@ use std::thread;
 use std::time::Duration;
 
 use crate::cli::LogArgs;
-use crate::collab::{CursorState, StreamMessage, project_hash, resolve_project, stream_inode, stream_path};
+use crate::collab::{
+    CursorState, StreamMessage, project_hash, resolve_project, stream_inode, stream_path,
+};
 use crate::config::Config;
 use crate::output;
 

@@ -1,0 +1,8 @@
+{"type":"system","sessionId":"cafe0001-0000-0000-0000-000000000001","cwd":"/batch/a","gitBranch":"main","timestamp":"2026-07-01T10:00:00.000Z","uuid":"sys-1"}
+{"type":"user","message":{"role":"user","content":"search for zebrafish here"},"uuid":"dup-uuid-0001","timestamp":"2026-07-01T10:01:00.000Z","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"looking into that now"}]},"uuid":"asst-0001","timestamp":"2026-07-01T10:02:00.000Z","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"user","message":{"role":"user","content":"compute total(count) for the batch"},"uuid":"u-literal-0001","timestamp":"2026-07-01T10:03:00.000Z","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"metaonly hippopotamus marker"},"uuid":"meta-0001","timestamp":"2026-07-01T10:04:00.000Z","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"user","message":{"role":"user","content":"visible prose here <system-reminder>reminderonly kangaroo marker</system-reminder> trailing text"},"uuid":"u-rem-0001","timestamp":"2026-07-01T10:05:00.000Z","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"ai-title","aiTitle":"Batch A Golden Session","sessionId":"cafe0001-0000-0000-0000-000000000001"}
+{"type":"last-prompt","lastPrompt":"the final question asked","leafUuid":"u-rem-0001","sessionId":"cafe0001-0000-0000-0000-000000000001"}

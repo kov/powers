@@ -100,6 +100,8 @@ fn discover_session(workspace_yaml: &PathBuf) -> Result<SessionMeta> {
         started_at,
         last_activity,
         message_count,
+        title: None,
+        last_prompt: None,
     })
 }
 

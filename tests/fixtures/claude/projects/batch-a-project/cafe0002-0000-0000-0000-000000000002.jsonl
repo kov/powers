@@ -1,0 +1,2 @@
+{"type":"system","sessionId":"cafe0002-0000-0000-0000-000000000002","cwd":"/batch/a","gitBranch":"main","timestamp":"2026-06-30T09:00:00.000Z","uuid":"sys-2"}
+{"type":"user","message":{"role":"user","content":"search for zebrafish here"},"uuid":"dup-uuid-0001","timestamp":"2026-06-30T09:01:00.000Z","sessionId":"cafe0002-0000-0000-0000-000000000002"}

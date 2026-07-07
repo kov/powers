@@ -6,6 +6,7 @@ mod output;
 mod parsers;
 mod persisted;
 mod session;
+mod util;
 
 use clap::Parser;
 use cli::{Cli, Commands};

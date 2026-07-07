@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::NaiveDate;
 use std::path::PathBuf;
 
 use crate::cli::{ListArgs, OutputFormat, ToolFilter};
@@ -9,6 +8,7 @@ use crate::parsers::{
     Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
 };
 use crate::session::SessionMeta;
+use crate::util;
 
 pub fn run(args: &ListArgs) -> Result<()> {
     let config = Config::load();
@@ -69,12 +69,24 @@ pub fn run(args: &ListArgs) -> Result<()> {
     }
 
     // Apply filters
-    let since = args.since.as_deref().and_then(parse_date_filter);
+    let since = args
+        .since
+        .as_deref()
+        .map(util::parse_time_bound)
+        .transpose()?;
+    let until = args
+        .until
+        .as_deref()
+        .map(util::parse_time_bound_until)
+        .transpose()?;
     if let Some(project) = &args.project {
         sessions.retain(|s| project_matches(&s.project_path, project));
     }
     if let Some(since_dt) = since {
-        sessions.retain(|s| s.last_activity.date_naive() >= since_dt);
+        sessions.retain(|s| s.last_activity >= since_dt);
+    }
+    if let Some(until_dt) = until {
+        sessions.retain(|s| s.last_activity <= until_dt);
     }
 
     // Sort by last_activity descending
@@ -96,10 +108,6 @@ pub fn run(args: &ListArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn parse_date_filter(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
 fn project_matches(project_path: &Option<PathBuf>, filter: &PathBuf) -> bool {

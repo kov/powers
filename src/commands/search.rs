@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
-use chrono::NaiveDate;
 use regex::Regex;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
@@ -12,27 +11,38 @@ use crate::parsers::{
     Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
 };
 use crate::session::{Message, SessionMeta, Tool};
+use crate::util;
 
 pub fn run(args: &SearchArgs) -> Result<()> {
-    let pattern = if args.case_sensitive {
-        Regex::new(&args.pattern)
+    // Literal substring by default; opt into regex with --regex.
+    let raw = if args.regex {
+        args.pattern.clone()
     } else {
-        Regex::new(&format!("(?i){}", args.pattern))
+        regex::escape(&args.pattern)
+    };
+    let pattern = if args.case_sensitive {
+        Regex::new(&raw)
+    } else {
+        Regex::new(&format!("(?i){raw}"))
     }
     .with_context(|| format!("Invalid regex: {}", args.pattern))?;
 
     let config = Config::load();
 
-    // Phase 1: discover and filter by tool/project/since using only SessionMeta
+    // Phase 1: discover and filter by tool/project/time using only SessionMeta
     let all_sessions = discover_filtered(&config, args)?;
 
     let mut total_matches = 0usize;
+    // uuids that have already produced a match, so the same message reappearing in
+    // a resumed/forked session file is not reported twice. Sessions are sorted
+    // newest-first, so the surviving copy is the most recent one.
+    let mut seen_uuids: HashSet<String> = HashSet::new();
 
     for meta in &all_sessions {
         if total_matches >= args.max_matches {
             break;
         }
-        let matched = search_session(meta, &pattern, args, &mut total_matches)?;
+        let matched = search_session(meta, &pattern, args, &mut total_matches, &mut seen_uuids)?;
         if args.session_only && matched {
             println!("{}", meta.id);
         }
@@ -90,15 +100,34 @@ fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMe
         }
     }
 
-    let since = args.since.as_deref().and_then(parse_date_filter);
+    let since = args
+        .since
+        .as_deref()
+        .map(util::parse_time_bound)
+        .transpose()?;
+    let until = args
+        .until
+        .as_deref()
+        .map(util::parse_time_bound_until)
+        .transpose()?;
     sessions.retain(|s| {
         if let Some(project) = &args.project
             && !project_matches(&s.project_path, project)
         {
             return false;
         }
+        if let Some(exclude) = &args.exclude_session
+            && s.matches_prefix(exclude)
+        {
+            return false;
+        }
         if let Some(since_dt) = since
-            && s.last_activity.date_naive() < since_dt
+            && s.last_activity < since_dt
+        {
+            return false;
+        }
+        if let Some(until_dt) = until
+            && s.last_activity > until_dt
         {
             return false;
         }
@@ -114,10 +143,12 @@ fn search_session(
     pattern: &Regex,
     args: &SearchArgs,
     total_matches: &mut usize,
+    seen_uuids: &mut HashSet<String>,
 ) -> Result<bool> {
     match meta.tool {
+        // Gemini has no per-message uuids, so cross-file dedup does not apply.
         Tool::Gemini => search_gemini(meta, pattern, args, total_matches),
-        _ => search_jsonl(meta, pattern, args, total_matches),
+        _ => search_jsonl(meta, pattern, args, total_matches, seen_uuids),
     }
 }
 ///
@@ -129,6 +160,7 @@ fn search_jsonl(
     pattern: &Regex,
     args: &SearchArgs,
     total_matches: &mut usize,
+    seen_uuids: &mut HashSet<String>,
 ) -> Result<bool> {
     let file = match std::fs::File::open(&meta.file_path) {
         Ok(f) => f,
@@ -154,20 +186,27 @@ fn search_jsonl(
             continue;
         }
 
-        // Phase 2 pre-filter: apply regex to raw bytes before parsing.
-        // This skips JSON parsing for the vast majority of lines.
-        let maybe_match = pattern.is_match(line);
-
         // Parse only lines that look like user/assistant messages
-        let Some(mut msg) = parse_jsonl_message(line, &meta.tool) else {
+        let Some((mut msg, uuid)) = parse_jsonl_message(line, &meta.tool) else {
             continue;
         };
         msg.index = msg_index;
         msg_index += 1;
 
-        // Re-check after parsing (raw pre-filter may have false positives from JSON keys)
-        let text = msg.content.extract_searchable_text(args.include_tool_calls);
-        let is_match = pattern.is_match(&text);
+        // Reminder blocks are injected context, not something the user or assistant
+        // wrote — strip them so guidance/skill text does not create false matches.
+        let raw = msg.content.extract_searchable_text(args.include_tool_calls);
+        let text = util::strip_reminders(&raw);
+        let mut is_match = pattern.is_match(&text);
+
+        // Suppress a match already reported from a newer session file (resume/fork),
+        // recording the uuid the first (newest) time it matches.
+        if is_match
+            && let Some(u) = uuid
+            && !seen_uuids.insert(u)
+        {
+            is_match = false;
+        }
 
         if post_ctx_remaining > 0 {
             if !args.session_only {
@@ -224,26 +263,27 @@ fn search_jsonl(
                 pre_ctx.push_back(msg);
             }
         }
-
-        let _ = maybe_match; // used only as early hint above
     }
 
     Ok(found_in_session)
 }
 
-/// Parse a single JSONL line into a Message, or return None if not a relevant message.
-/// This is the only per-line allocation: if the line doesn't look like a user/assistant
-/// message, we skip JSON parsing entirely.
-fn parse_jsonl_message(line: &str, tool: &Tool) -> Option<Message> {
+/// Parse a single JSONL line into a `(Message, uuid)` pair, or None if the line
+/// is not a relevant user/assistant message. The uuid is present only for Claude
+/// (used for cross-file dedup); other tools return None.
+///
+/// A cheap substring pre-filter avoids JSON parsing for lines that cannot be
+/// messages.
+fn parse_jsonl_message(line: &str, tool: &Tool) -> Option<(Message, Option<String>)> {
     match tool {
         Tool::Claude => parse_claude_line(line),
-        Tool::Codex => parse_codex_line(line),
-        Tool::Copilot => parse_copilot_line(line),
+        Tool::Codex => parse_codex_line(line).map(|m| (m, None)),
+        Tool::Copilot => parse_copilot_line(line).map(|m| (m, None)),
         _ => None,
     }
 }
 
-fn parse_claude_line(line: &str) -> Option<Message> {
+fn parse_claude_line(line: &str) -> Option<(Message, Option<String>)> {
     // Pre-filter: must contain "type":"user" or "type":"assistant"
     let is_user = line.contains("\"type\":\"user\"");
     let is_assistant = line.contains("\"type\":\"assistant\"");
@@ -254,8 +294,14 @@ fn parse_claude_line(line: &str) -> Option<Message> {
     let record: serde_json::Value = serde_json::from_str(line).ok()?;
     let record_type = record["type"].as_str()?;
 
+    // Injected meta rows (command echoes, injected context) are not real turns.
+    if record["isMeta"].as_bool() == Some(true) {
+        return None;
+    }
+
+    let uuid = record["uuid"].as_str().map(|s| s.to_string());
     use crate::parsers::claude::parse_message_from_record;
-    parse_message_from_record(&record, record_type)
+    parse_message_from_record(&record, record_type).map(|m| (m, uuid))
 }
 
 fn parse_codex_line(line: &str) -> Option<Message> {
@@ -329,7 +375,8 @@ fn search_gemini(
     let mut found_in_session = false;
 
     for msg in &session.messages {
-        let text = msg.content.extract_searchable_text(args.include_tool_calls);
+        let raw = msg.content.extract_searchable_text(args.include_tool_calls);
+        let text = util::strip_reminders(&raw);
         let is_match = pattern.is_match(&text);
 
         if post_ctx_remaining > 0 {
@@ -387,10 +434,6 @@ fn search_gemini(
     }
 
     Ok(found_in_session)
-}
-
-fn parse_date_filter(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
 fn project_matches(project_path: &Option<PathBuf>, filter: &PathBuf) -> bool {

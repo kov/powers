@@ -62,10 +62,20 @@ pub fn format_datetime(dt: &DateTime<Utc>) -> String {
 /// Print the `list` table header.
 pub fn print_list_header() {
     println!(
-        "{:<36}  {:<8}  {:<30}  {:<10}  MESSAGES",
-        "SESSION-ID", "TOOL", "PROJECT", "DATE"
+        "{:<36}  {:<8}  {:<28}  {:<10}  {:>5}  TITLE",
+        "SESSION-ID", "TOOL", "PROJECT", "DATE", "MSGS"
     );
     println!("{}", "-".repeat(100));
+}
+
+/// The best one-line label for a session: its ai-title, falling back to the last
+/// recorded prompt, then "-".
+fn session_label(meta: &SessionMeta) -> String {
+    meta.title
+        .as_deref()
+        .or(meta.last_prompt.as_deref())
+        .map(|s| s.replace('\n', " "))
+        .unwrap_or_else(|| "-".to_string())
 }
 
 /// Print a single session row in table format.
@@ -77,12 +87,13 @@ pub fn print_list_row(meta: &SessionMeta) {
         .unwrap_or_else(|| "-".to_string());
 
     println!(
-        "{:<36}  {:<8}  {:<30}  {:<10}  {}",
+        "{:<36}  {:<8}  {:<28}  {:<10}  {:>5}  {}",
         truncate(&meta.id, 36),
         truncate(&meta.tool.to_string(), 8),
-        truncate(&project, 30),
+        truncate(&project, 28),
         format_date(&meta.last_activity),
         meta.message_count,
+        truncate(&session_label(meta), 60),
     );
 }
 
@@ -95,12 +106,14 @@ pub fn print_list_row_tsv(meta: &SessionMeta) {
         .unwrap_or_default();
 
     println!(
-        "{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
         meta.id,
         meta.tool,
         project,
         format_date(&meta.last_activity),
         meta.message_count,
+        meta.title.as_deref().unwrap_or("").replace('\n', " "),
+        meta.last_prompt.as_deref().unwrap_or("").replace('\n', " "),
     );
 }
 
@@ -365,6 +378,9 @@ pub fn print_blank_line() {
 /// Print `info` command output for a session.
 pub fn print_info(meta: &SessionMeta) {
     println!("Session:      {}", meta.id);
+    if let Some(title) = &meta.title {
+        println!("Title:        {}", title.replace('\n', " "));
+    }
     println!("Tool:         {}", meta.tool);
     println!(
         "Project:      {}",
