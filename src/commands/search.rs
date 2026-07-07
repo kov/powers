@@ -743,10 +743,12 @@ fn parse_codex_line(line: &str) -> Option<Message> {
 }
 
 fn parse_copilot_line(line: &str) -> Option<Message> {
-    // Pre-filter: must be a user or assistant message event
+    // Pre-filter: user/assistant messages or a tool result (searchable via
+    // --in tool_result). tool.execution_complete carries Copilot tool output.
     let is_user = line.contains("\"type\":\"user.message\"");
     let is_assistant = line.contains("\"type\":\"assistant.message\"");
-    if !is_user && !is_assistant {
+    let is_tool_result = line.contains("\"type\":\"tool.execution_complete\"");
+    if !is_user && !is_assistant && !is_tool_result {
         return None;
     }
 
