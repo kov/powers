@@ -86,6 +86,77 @@ fn parse_relative(s: &str, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
     now.checked_sub_signed(dur)
 }
 
+/// A snippet of text centered on a match, with a few lines of surrounding
+/// context, capped at `max_chars` and marked with `…` where it was cut.
+///
+/// `start`/`end` are the byte range of the match within `text`. The window is
+/// expanded by `ctx_lines` lines on each side, then, if still too long, capped
+/// to `max_chars` centered on the match (on char boundaries).
+pub fn build_snippet(
+    text: &str,
+    start: usize,
+    end: usize,
+    ctx_lines: usize,
+    max_chars: usize,
+) -> String {
+    let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_end = text[end..]
+        .find('\n')
+        .map(|i| end + i)
+        .unwrap_or(text.len());
+
+    let mut win_start = line_start;
+    for _ in 0..ctx_lines {
+        if win_start == 0 {
+            break;
+        }
+        win_start = text[..win_start - 1]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+    }
+    let mut win_end = line_end;
+    for _ in 0..ctx_lines {
+        if win_end >= text.len() {
+            break;
+        }
+        win_end = text[win_end + 1..]
+            .find('\n')
+            .map(|i| win_end + 1 + i)
+            .unwrap_or(text.len());
+    }
+
+    let mut window = &text[win_start..win_end];
+    let mut prefix = win_start > 0;
+    let mut suffix = win_end < text.len();
+
+    if window.chars().count() > max_chars {
+        let match_mid = (start + end) / 2;
+        let half = max_chars / 2;
+        let mut lo = match_mid.saturating_sub(half).max(win_start);
+        let mut hi = (match_mid + half).min(win_end);
+        while !text.is_char_boundary(lo) && lo > win_start {
+            lo -= 1;
+        }
+        while !text.is_char_boundary(hi) && hi < win_end {
+            hi += 1;
+        }
+        window = &text[lo..hi];
+        prefix = prefix || lo > win_start;
+        suffix = suffix || hi < win_end;
+    }
+
+    let mut out = String::new();
+    if prefix {
+        out.push('…');
+    }
+    out.push_str(window.trim_matches('\n'));
+    if suffix {
+        out.push('…');
+    }
+    out
+}
+
 /// Remove injected `<system-reminder>...</system-reminder>` blocks so they do
 /// not create false matches when searching prose. Unterminated blocks are
 /// dropped to the end of the string.
@@ -178,6 +249,31 @@ mod tests {
         assert!(parse_time_bound_at("", now(), DayAnchor::Start).is_err());
         // Absurd relative span must error, not panic.
         assert!(parse_time_bound_at("99999999999999w", now(), DayAnchor::Start).is_err());
+    }
+
+    #[test]
+    fn snippet_centers_and_marks_truncation() {
+        let text = "line one\nline two has the needle here\nline three\nline four";
+        let idx = text.find("needle").unwrap();
+        let s = build_snippet(text, idx, idx + 6, 1, 200);
+        assert!(s.contains("needle"));
+        assert!(s.contains("line one"));
+
+        // Long single line is centered and ellipsized around the match.
+        let long = format!("{}NEEDLE{}", "a".repeat(500), "b".repeat(500));
+        let mi = long.find("NEEDLE").unwrap();
+        let s2 = build_snippet(&long, mi, mi + 6, 2, 60);
+        assert!(s2.contains("NEEDLE"));
+        assert!(s2.starts_with('…') && s2.ends_with('…'));
+        assert!(s2.chars().count() <= 64);
+    }
+
+    #[test]
+    fn snippet_is_multibyte_safe() {
+        let text = "☃☃☃ needle ☃☃☃ padding ".repeat(20);
+        let idx = text.find("needle").unwrap();
+        let s = build_snippet(&text, idx, idx + 6, 2, 40);
+        assert!(s.contains("needle"));
     }
 
     #[test]

@@ -138,6 +138,34 @@ fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMe
     Ok(sessions)
 }
 
+/// A match-centered snippet plus stats about the matched text.
+struct Hit {
+    snippet: String,
+    match_count: usize,
+    full_length: usize,
+}
+
+/// Build a snippet centered on the first match within `text`.
+fn build_hit(pattern: &Regex, text: &str) -> Option<Hit> {
+    let first = pattern.find(text)?;
+    let match_count = pattern.find_iter(text).count();
+    let snippet = util::build_snippet(text, first.start(), first.end(), 2, 240);
+    Some(Hit {
+        snippet,
+        match_count,
+        full_length: text.chars().count(),
+    })
+}
+
+/// Print a message: a match-centered snippet when it matched, else a short
+/// context preview.
+fn print_msg(msg: &Message, hit: Option<&Hit>) {
+    match hit {
+        Some(h) => output::print_search_snippet(msg, &h.snippet, h.match_count, h.full_length),
+        None => output::print_search_match(msg),
+    }
+}
+
 fn search_session(
     meta: &SessionMeta,
     pattern: &Regex,
@@ -208,9 +236,16 @@ fn search_jsonl(
             is_match = false;
         }
 
+        // Build a match-centered snippet for the matching message.
+        let hit = if is_match {
+            build_hit(pattern, &text)
+        } else {
+            None
+        };
+
         if post_ctx_remaining > 0 {
             if !args.session_only {
-                output::print_search_match(&msg);
+                print_msg(&msg, hit.as_ref());
             }
             post_ctx_remaining -= 1;
 
@@ -246,7 +281,7 @@ fn search_jsonl(
             }
             pre_ctx.clear();
 
-            output::print_search_match(&msg);
+            print_msg(&msg, hit.as_ref());
             *total_matches += 1;
 
             if ctx_n == 0 {
@@ -378,10 +413,15 @@ fn search_gemini(
         let raw = msg.content.extract_searchable_text(args.include_tool_calls);
         let text = util::strip_reminders(&raw);
         let is_match = pattern.is_match(&text);
+        let hit = if is_match {
+            build_hit(pattern, &text)
+        } else {
+            None
+        };
 
         if post_ctx_remaining > 0 {
             if !args.session_only {
-                output::print_search_match(msg);
+                print_msg(msg, hit.as_ref());
             }
             post_ctx_remaining -= 1;
 
@@ -415,7 +455,7 @@ fn search_gemini(
             }
             pre_ctx.clear();
 
-            output::print_search_match(msg);
+            print_msg(msg, hit.as_ref());
             *total_matches += 1;
 
             if ctx_n == 0 {

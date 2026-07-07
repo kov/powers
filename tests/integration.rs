@@ -915,6 +915,37 @@ fn search_unbalanced_bracket_is_literal_not_error() {
 }
 
 #[test]
+fn search_snippet_centers_on_buried_match() {
+    // The match is on line 16 of a long message; the old first-10-lines preview
+    // would have missed it. The snippet must contain it and report match stats.
+    let out = powers()
+        .args([
+            "search",
+            "buriedneedle",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(
+        s.contains("buriedneedle"),
+        "snippet should contain the buried match: {s}"
+    );
+    assert!(
+        s.contains("1 match,") && s.contains("chars)"),
+        "match metadata missing: {s}"
+    );
+    assert!(
+        !s.contains("filler line 01"),
+        "snippet should be centered on the match, not the message start: {s}"
+    );
+}
+
+#[test]
 fn search_excludes_meta_rows() {
     let out = powers()
         .args([

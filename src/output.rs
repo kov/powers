@@ -134,7 +134,7 @@ pub fn print_search_header(meta: &SessionMeta) {
     );
 }
 
-/// Print a single search result message.
+/// Print a single search context message (surrounding a match): a short preview.
 pub fn print_search_match(msg: &Message) {
     let ts = msg
         .timestamp
@@ -144,6 +144,24 @@ pub fn print_search_match(msg: &Message) {
     println!("[msg {} / {} / {}]", msg.index, msg.role, ts);
     let text = msg.content.extract_text();
     for line in text.lines().take(10) {
+        println!("  {}", line);
+    }
+}
+
+/// Print the message that actually matched, showing a snippet centered on the
+/// match plus how many matches / how large the message is.
+pub fn print_search_snippet(msg: &Message, snippet: &str, match_count: usize, full_length: usize) {
+    let ts = msg
+        .timestamp
+        .as_ref()
+        .map(format_datetime)
+        .unwrap_or_default();
+    let plural = if match_count == 1 { "match" } else { "matches" };
+    println!(
+        "[msg {} / {} / {}] ({} {}, {} chars)",
+        msg.index, msg.role, ts, match_count, plural, full_length
+    );
+    for line in snippet.lines() {
         println!("  {}", line);
     }
 }
