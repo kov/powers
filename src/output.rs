@@ -148,18 +148,44 @@ pub fn print_search_match(msg: &Message) {
     }
 }
 
-/// Print the message that actually matched, showing a snippet centered on the
-/// match plus how many matches / how large the message is.
-pub fn print_search_snippet(msg: &Message, snippet: &str, match_count: usize, full_length: usize) {
+/// Print the message that actually matched, showing which block matched (with
+/// tool attribution for tool_result), a snippet centered on the match, and how
+/// many matches / how large the block is.
+#[allow(clippy::too_many_arguments)]
+pub fn print_search_snippet(
+    msg: &Message,
+    matched_in: &str,
+    tool: Option<&str>,
+    tool_input: Option<&str>,
+    is_error: bool,
+    snippet: &str,
+    match_count: usize,
+    full_length: usize,
+) {
     let ts = msg
         .timestamp
         .as_ref()
         .map(format_datetime)
         .unwrap_or_default();
     let plural = if match_count == 1 { "match" } else { "matches" };
+
+    // Describe the block: prose matches just say the role; tool blocks name the
+    // tool and its one-line input, and flag errored tool results.
+    let where_label = match matched_in {
+        "text" => String::new(),
+        "thinking" => " in thinking".to_string(),
+        "tool_use" | "tool_result" => {
+            let name = tool.unwrap_or("?");
+            let input = tool_input.map(|s| format!(": {s}")).unwrap_or_default();
+            let err = if is_error { " error" } else { "" };
+            format!(" in {matched_in}{err} [{name}{input}]")
+        }
+        other => format!(" in {other}"),
+    };
+
     println!(
-        "[msg {} / {} / {}] ({} {}, {} chars)",
-        msg.index, msg.role, ts, match_count, plural, full_length
+        "[msg {} / {} / {}]{} ({} {}, {} chars)",
+        msg.index, msg.role, ts, where_label, match_count, plural, full_length
     );
     for line in snippet.lines() {
         println!("  {}", line);
@@ -213,7 +239,7 @@ fn print_message_content(content: &MessageContent, width: usize, opts: MessageRe
                         println!("  [thinking]");
                         print_wrapped(s, width, "    ");
                     }
-                    ContentPart::ToolCall { name, input } => {
+                    ContentPart::ToolCall { name, input, .. } => {
                         if opts.expand_tool_calls {
                             render_tool_call(name, input, width);
                         } else {
@@ -225,8 +251,10 @@ fn print_message_content(content: &MessageContent, width: usize, opts: MessageRe
                     ContentPart::ToolResult {
                         tool_use_id,
                         content,
+                        is_error,
                     } => {
-                        println!("  [tool_result: {}]", tool_use_id);
+                        let err = if *is_error { " (error)" } else { "" };
+                        println!("  [tool_result: {}{}]", tool_use_id, err);
                         if let Some(persisted) = parse_persisted_output_ref(content) {
                             println!("    persisted_path: {}", persisted.path.display());
                             if let Some(size) = persisted.declared_size {

@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use regex::Regex;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
@@ -10,8 +10,84 @@ use crate::output;
 use crate::parsers::{
     Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
 };
-use crate::session::{Message, SessionMeta, Tool};
+use crate::session::{ContentPart, Message, MessageContent, Role, SessionMeta, Tool};
 use crate::util;
+
+/// Which block kinds to search, and any tool-name restriction.
+struct MatchSpec {
+    user: bool,
+    assistant: bool,
+    thinking: bool,
+    tool_use: bool,
+    tool_result: bool,
+    tool_names: Vec<String>,
+}
+
+impl MatchSpec {
+    /// Build from `--in` (comma-separated kinds) plus the legacy
+    /// `--include-tool-calls` flag and `--tool-name` restriction.
+    fn from_args(args: &SearchArgs) -> Result<MatchSpec> {
+        let mut spec = MatchSpec {
+            user: false,
+            assistant: false,
+            thinking: false,
+            tool_use: false,
+            tool_result: false,
+            tool_names: args.tool_names.clone(),
+        };
+        match args.r#in.as_deref() {
+            Some(list) => {
+                for tok in list.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+                    match tok {
+                        "user" => spec.user = true,
+                        "assistant" => spec.assistant = true,
+                        "thinking" => spec.thinking = true,
+                        "tool_use" => spec.tool_use = true,
+                        "tool_result" => spec.tool_result = true,
+                        "prose" => {
+                            spec.user = true;
+                            spec.assistant = true;
+                        }
+                        "all" => {
+                            spec.user = true;
+                            spec.assistant = true;
+                            spec.thinking = true;
+                            spec.tool_use = true;
+                            spec.tool_result = true;
+                        }
+                        other => bail!(
+                            "unknown --in kind '{other}' (valid: user, assistant, thinking, tool_use, tool_result, prose, all)"
+                        ),
+                    }
+                }
+            }
+            None => {
+                spec.user = true;
+                spec.assistant = true;
+                // A bare --tool-name implies searching tool blocks.
+                if !spec.tool_names.is_empty() {
+                    spec.tool_use = true;
+                    spec.tool_result = true;
+                }
+            }
+        }
+        // Legacy flag folds in tool_use.
+        if args.include_tool_calls {
+            spec.tool_use = true;
+        }
+        Ok(spec)
+    }
+
+    fn tool_name_allowed(&self, name: Option<&str>) -> bool {
+        if self.tool_names.is_empty() {
+            return true;
+        }
+        match name {
+            Some(n) => self.tool_names.iter().any(|t| t.eq_ignore_ascii_case(n)),
+            None => false,
+        }
+    }
+}
 
 pub fn run(args: &SearchArgs) -> Result<()> {
     // Literal substring by default; opt into regex with --regex.
@@ -26,6 +102,8 @@ pub fn run(args: &SearchArgs) -> Result<()> {
         Regex::new(&format!("(?i){raw}"))
     }
     .with_context(|| format!("Invalid regex: {}", args.pattern))?;
+
+    let spec = MatchSpec::from_args(args)?;
 
     let config = Config::load();
 
@@ -42,7 +120,14 @@ pub fn run(args: &SearchArgs) -> Result<()> {
         if total_matches >= args.max_matches {
             break;
         }
-        let matched = search_session(meta, &pattern, args, &mut total_matches, &mut seen_uuids)?;
+        let matched = search_session(
+            meta,
+            &pattern,
+            &spec,
+            args,
+            &mut total_matches,
+            &mut seen_uuids,
+        )?;
         if args.session_only && matched {
             println!("{}", meta.id);
         }
@@ -138,30 +223,155 @@ fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMe
     Ok(sessions)
 }
 
-/// A match-centered snippet plus stats about the matched text.
+/// A match within a message: a snippet centered on the first hit, plus which
+/// block it came from and (for tool_result) which tool produced it.
 struct Hit {
+    matched_in: &'static str,
+    tool: Option<String>,
+    tool_input: Option<String>,
+    is_error: bool,
     snippet: String,
     match_count: usize,
     full_length: usize,
 }
 
-/// Build a snippet centered on the first match within `text`.
-fn build_hit(pattern: &Regex, text: &str) -> Option<Hit> {
+/// Scan one block's text; on a match, build a snippet centered on it.
+fn scan(
+    pattern: &Regex,
+    text: &str,
+    kind: &'static str,
+    tool: Option<String>,
+    tool_input: Option<String>,
+    is_error: bool,
+) -> Option<Hit> {
     let first = pattern.find(text)?;
     let match_count = pattern.find_iter(text).count();
     let snippet = util::build_snippet(text, first.start(), first.end(), 2, 240);
     Some(Hit {
+        matched_in: kind,
+        tool,
+        tool_input,
+        is_error,
         snippet,
         match_count,
         full_length: text.chars().count(),
     })
 }
 
+/// Test a message against the pattern, honoring the `--in` kinds and
+/// `--tool-name` restriction. Returns the first matching block as a [`Hit`].
+/// `tool_map` attributes a tool_result back to the tool_use that produced it.
+fn match_message(
+    msg: &Message,
+    pattern: &Regex,
+    spec: &MatchSpec,
+    tool_map: &HashMap<String, (String, String)>,
+) -> Option<Hit> {
+    let text_wanted = match msg.role {
+        Role::User => spec.user,
+        Role::Assistant => spec.assistant,
+    };
+    match &msg.content {
+        MessageContent::Text(s) => {
+            if !text_wanted {
+                return None;
+            }
+            scan(
+                pattern,
+                &util::strip_reminders(s),
+                "text",
+                None,
+                None,
+                false,
+            )
+        }
+        MessageContent::Parts(parts) => {
+            for p in parts {
+                let hit = match p {
+                    ContentPart::Text(t) if text_wanted => scan(
+                        pattern,
+                        &util::strip_reminders(t),
+                        "text",
+                        None,
+                        None,
+                        false,
+                    ),
+                    ContentPart::Thinking(t) if spec.thinking => {
+                        scan(pattern, t, "thinking", None, None, false)
+                    }
+                    ContentPart::ToolCall { name, input, .. } if spec.tool_use => {
+                        if !spec.tool_name_allowed(Some(name)) {
+                            continue;
+                        }
+                        let summary = util::summarize_tool_input(name, input);
+                        scan(
+                            pattern,
+                            input,
+                            "tool_use",
+                            Some(name.clone()),
+                            Some(summary),
+                            false,
+                        )
+                    }
+                    ContentPart::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } if spec.tool_result => {
+                        let origin = tool_map.get(tool_use_id);
+                        let name = origin.map(|(n, _)| n.clone());
+                        let input = origin.map(|(_, s)| s.clone());
+                        if !spec.tool_name_allowed(name.as_deref()) {
+                            continue;
+                        }
+                        scan(pattern, content, "tool_result", name, input, *is_error)
+                    }
+                    _ => continue,
+                };
+                if hit.is_some() {
+                    return hit;
+                }
+            }
+            None
+        }
+    }
+}
+
+/// Record a message's tool_use ids so later tool_result blocks can be attributed.
+/// Claude always emits a tool_use before the tool_result that references it, so a
+/// forward pass keeps the map complete. Bounded by tool_use count per session.
+fn record_tool_calls(msg: &Message, tool_map: &mut HashMap<String, (String, String)>) {
+    if let MessageContent::Parts(parts) = &msg.content {
+        for p in parts {
+            if let ContentPart::ToolCall {
+                id: Some(id),
+                name,
+                input,
+            } = p
+            {
+                tool_map.insert(
+                    id.clone(),
+                    (name.clone(), util::summarize_tool_input(name, input)),
+                );
+            }
+        }
+    }
+}
+
 /// Print a message: a match-centered snippet when it matched, else a short
 /// context preview.
 fn print_msg(msg: &Message, hit: Option<&Hit>) {
     match hit {
-        Some(h) => output::print_search_snippet(msg, &h.snippet, h.match_count, h.full_length),
+        Some(h) => output::print_search_snippet(
+            msg,
+            h.matched_in,
+            h.tool.as_deref(),
+            h.tool_input.as_deref(),
+            h.is_error,
+            &h.snippet,
+            h.match_count,
+            h.full_length,
+        ),
         None => output::print_search_match(msg),
     }
 }
@@ -169,14 +379,15 @@ fn print_msg(msg: &Message, hit: Option<&Hit>) {
 fn search_session(
     meta: &SessionMeta,
     pattern: &Regex,
+    spec: &MatchSpec,
     args: &SearchArgs,
     total_matches: &mut usize,
     seen_uuids: &mut HashSet<String>,
 ) -> Result<bool> {
     match meta.tool {
         // Gemini has no per-message uuids, so cross-file dedup does not apply.
-        Tool::Gemini => search_gemini(meta, pattern, args, total_matches),
-        _ => search_jsonl(meta, pattern, args, total_matches, seen_uuids),
+        Tool::Gemini => search_gemini(meta, pattern, spec, args, total_matches),
+        _ => search_jsonl(meta, pattern, spec, args, total_matches, seen_uuids),
     }
 }
 ///
@@ -186,6 +397,7 @@ fn search_session(
 fn search_jsonl(
     meta: &SessionMeta,
     pattern: &Regex,
+    spec: &MatchSpec,
     args: &SearchArgs,
     total_matches: &mut usize,
     seen_uuids: &mut HashSet<String>,
@@ -203,6 +415,8 @@ fn search_jsonl(
     let mut found_in_session = false;
     // Track the position of each parsed user/assistant message so indices are meaningful
     let mut msg_index: usize = 0;
+    // tool_use id -> (tool name, one-line input summary), for tool_result attribution.
+    let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
 
     let mut lines = BufReader::new(file).lines();
     lines.next(); // skip header line (session metadata)
@@ -221,27 +435,22 @@ fn search_jsonl(
         msg.index = msg_index;
         msg_index += 1;
 
-        // Reminder blocks are injected context, not something the user or assistant
-        // wrote — strip them so guidance/skill text does not create false matches.
-        let raw = msg.content.extract_searchable_text(args.include_tool_calls);
-        let text = util::strip_reminders(&raw);
-        let mut is_match = pattern.is_match(&text);
+        // Record this message's tool_use ids before matching, so a later
+        // tool_result can be attributed back to the tool that produced it.
+        record_tool_calls(&msg, &mut tool_map);
+
+        // Match per selected block kind (reminders stripped from prose inside).
+        let mut hit = match_message(&msg, pattern, spec, &tool_map);
 
         // Suppress a match already reported from a newer session file (resume/fork),
         // recording the uuid the first (newest) time it matches.
-        if is_match
+        if hit.is_some()
             && let Some(u) = uuid
             && !seen_uuids.insert(u)
         {
-            is_match = false;
+            hit = None;
         }
-
-        // Build a match-centered snippet for the matching message.
-        let hit = if is_match {
-            build_hit(pattern, &text)
-        } else {
-            None
-        };
+        let is_match = hit.is_some();
 
         if post_ctx_remaining > 0 {
             if !args.session_only {
@@ -398,6 +607,7 @@ fn parse_copilot_line(line: &str) -> Option<Message> {
 fn search_gemini(
     meta: &SessionMeta,
     pattern: &Regex,
+    spec: &MatchSpec,
     args: &SearchArgs,
     total_matches: &mut usize,
 ) -> Result<bool> {
@@ -408,16 +618,12 @@ fn search_gemini(
     let mut pre_ctx: VecDeque<&Message> = VecDeque::with_capacity(ctx_n + 1);
     let mut post_ctx_remaining: usize = 0;
     let mut found_in_session = false;
+    let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
 
     for msg in &session.messages {
-        let raw = msg.content.extract_searchable_text(args.include_tool_calls);
-        let text = util::strip_reminders(&raw);
-        let is_match = pattern.is_match(&text);
-        let hit = if is_match {
-            build_hit(pattern, &text)
-        } else {
-            None
-        };
+        record_tool_calls(msg, &mut tool_map);
+        let hit = match_message(msg, pattern, spec, &tool_map);
+        let is_match = hit.is_some();
 
         if post_ctx_remaining > 0 {
             if !args.session_only {

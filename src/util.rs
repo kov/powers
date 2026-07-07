@@ -2,6 +2,7 @@
 
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use serde_json::Value;
 
 /// How a bare `YYYY-MM-DD` is anchored within its day.
 #[derive(Clone, Copy, PartialEq)]
@@ -84,6 +85,52 @@ fn parse_relative(s: &str, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
         _ => None,
     }?;
     now.checked_sub_signed(dur)
+}
+
+/// Truncate a string to at most `max` characters, appending `…` if cut.
+pub fn truncate_chars(s: &str, max: usize) -> String {
+    let trimmed = s.trim();
+    if trimmed.chars().count() <= max {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
+/// A one-line human summary of a tool-call input (the command for Bash, the file
+/// for Read/Edit/Write, etc.). `input` is the raw JSON string stored on a
+/// [`crate::session::ContentPart::ToolCall`].
+pub fn summarize_tool_input(name: &str, input: &str) -> String {
+    let parsed: Value = serde_json::from_str(input).unwrap_or(Value::Null);
+    let obj = parsed.as_object();
+    let get = |k: &str| obj.and_then(|o| o.get(k)).and_then(|v| v.as_str());
+    let one_line = |s: &str| s.replace('\n', " ");
+
+    let summary = match name {
+        "Bash" => get("command").map(one_line),
+        "Read" | "Write" | "NotebookEdit" | "Edit" | "MultiEdit" => {
+            get("file_path").map(String::from)
+        }
+        "Grep" => get("pattern").map(|p| {
+            let path = get("path").unwrap_or("");
+            if path.is_empty() {
+                p.to_string()
+            } else {
+                format!("{p} in {path}")
+            }
+        }),
+        "Glob" => get("pattern").map(String::from),
+        "Task" | "Agent" => get("description").map(String::from),
+        "WebFetch" => get("url").map(String::from),
+        "WebSearch" => get("query").map(String::from),
+        _ => None,
+    };
+
+    match summary {
+        Some(s) => truncate_chars(&s, 200),
+        None => truncate_chars(&one_line(input), 200),
+    }
 }
 
 /// A snippet of text centered on a match, with a few lines of surrounding
@@ -249,6 +296,24 @@ mod tests {
         assert!(parse_time_bound_at("", now(), DayAnchor::Start).is_err());
         // Absurd relative span must error, not panic.
         assert!(parse_time_bound_at("99999999999999w", now(), DayAnchor::Start).is_err());
+    }
+
+    #[test]
+    fn tool_input_summaries() {
+        assert_eq!(
+            summarize_tool_input("Bash", r#"{"command":"cargo build\n--release"}"#),
+            "cargo build --release"
+        );
+        assert_eq!(
+            summarize_tool_input("Read", r#"{"file_path":"/a/b.rs"}"#),
+            "/a/b.rs"
+        );
+        assert_eq!(
+            summarize_tool_input("Grep", r#"{"pattern":"foo","path":"src"}"#),
+            "foo in src"
+        );
+        // Unknown tool falls back to compact input.
+        assert!(summarize_tool_input("Mystery", r#"{"x":1}"#).contains("\"x\""));
     }
 
     #[test]

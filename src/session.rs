@@ -138,12 +138,16 @@ pub enum ContentPart {
     Text(String),
     Thinking(String),
     ToolCall {
+        /// Provider tool-use id (Claude `toolu_…`), used to attribute a later
+        /// tool_result back to this call. None for tools that don't expose one.
+        id: Option<String>,
         name: String,
         input: String,
     },
     ToolResult {
         tool_use_id: String,
         content: String,
+        is_error: bool,
     },
 }
 
@@ -175,6 +179,7 @@ mod tests {
         let content = MessageContent::Parts(vec![
             ContentPart::Text("hello".to_string()),
             ContentPart::ToolCall {
+                id: None,
                 name: "bash".to_string(),
                 input: "ls".to_string(),
             },
@@ -188,12 +193,14 @@ mod tests {
         let content = MessageContent::Parts(vec![
             ContentPart::Text("hello".to_string()),
             ContentPart::ToolCall {
+                id: None,
                 name: "Edit".to_string(),
                 input: r#"{"new_string":"fn foo() {}"}"#.to_string(),
             },
             ContentPart::ToolResult {
                 tool_use_id: "x".to_string(),
                 content: "noisy log line".to_string(),
+                is_error: false,
             },
         ]);
         assert_eq!(content.extract_searchable_text(false), "hello");
@@ -207,12 +214,14 @@ mod tests {
     fn test_without_tool_calls() {
         let content = MessageContent::Parts(vec![
             ContentPart::ToolCall {
+                id: None,
                 name: "bash".to_string(),
                 input: "ls".to_string(),
             },
             ContentPart::ToolResult {
                 tool_use_id: "x".to_string(),
                 content: "file.txt".to_string(),
+                is_error: false,
             },
         ]);
         let filtered = content.without_tool_calls();

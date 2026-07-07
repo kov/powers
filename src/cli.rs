@@ -104,8 +104,18 @@ pub struct SearchArgs {
     #[arg(long)]
     pub session_only: bool,
 
-    /// Also search inside tool-call inputs (Edit diffs, Write content, Bash commands, ...).
-    /// Off by default — tool-call JSON is noisy and contains escaped whitespace.
+    /// Block kinds to search, comma-separated: user, assistant, thinking,
+    /// tool_use, tool_result (plus shorthands `prose` = user,assistant and `all`).
+    /// Defaults to user,assistant.
+    #[arg(long, value_name = "KINDS")]
+    pub r#in: Option<String>,
+
+    /// Restrict tool_use / tool_result matches to these tool names (e.g. Bash).
+    /// Repeatable. Implies searching tool_use and tool_result when no --in given.
+    #[arg(long = "tool-name", value_name = "NAME")]
+    pub tool_names: Vec<String>,
+
+    /// Deprecated alias for `--in user,assistant,tool_use`: also search tool-call inputs.
     #[arg(long)]
     pub include_tool_calls: bool,
 }

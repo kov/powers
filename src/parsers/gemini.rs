@@ -221,7 +221,11 @@ fn load_session(meta: &SessionMeta) -> Result<Session> {
                 for tc in tool_calls {
                     let name = tc["name"].as_str().unwrap_or("").to_string();
                     let input = serde_json::to_string(&tc["args"]).unwrap_or_default();
-                    parts.push(ContentPart::ToolCall { name, input });
+                    parts.push(ContentPart::ToolCall {
+                        id: None,
+                        name,
+                        input,
+                    });
                 }
             }
 

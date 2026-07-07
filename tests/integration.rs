@@ -946,6 +946,167 @@ fn search_snippet_centers_on_buried_match() {
 }
 
 #[test]
+fn search_default_excludes_tool_result() {
+    let out = powers()
+        .args([
+            "search",
+            "zorpresult",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert_eq!(
+        match_lines(s),
+        0,
+        "tool_result must not be searched by default: {s}"
+    );
+}
+
+#[test]
+fn search_in_tool_result_attributes_to_tool() {
+    let out = powers()
+        .args([
+            "search",
+            "zorpresult",
+            "--in",
+            "tool_result",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert_eq!(match_lines(s), 1, "tool_result match missing: {s}");
+    assert!(
+        s.contains("tool_result") && s.contains("Bash"),
+        "match should be attributed to Bash: {s}"
+    );
+}
+
+#[test]
+fn search_tool_name_filters_tool_result() {
+    // Same query, but restricted to Read — the Bash result must be filtered out.
+    let out = powers()
+        .args([
+            "search",
+            "zorpresult",
+            "--in",
+            "tool_result",
+            "--tool-name",
+            "Read",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert_eq!(
+        match_lines(s),
+        0,
+        "tool-name filter should exclude Bash: {s}"
+    );
+}
+
+#[test]
+fn search_in_tool_use_and_thinking() {
+    // tool_use input is searchable via --in tool_use.
+    let tu = powers()
+        .args([
+            "search",
+            "zorpcmd",
+            "--in",
+            "tool_use",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&tu)),
+        1,
+        "tool_use match missing: {}",
+        stdout(&tu)
+    );
+
+    // Legacy --include-tool-calls still finds tool_use input.
+    let legacy = powers()
+        .args([
+            "search",
+            "zorpcmd",
+            "--include-tool-calls",
+            "--project",
+            "/batch/a",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&legacy)),
+        1,
+        "legacy --include-tool-calls should find tool_use: {}",
+        stdout(&legacy)
+    );
+
+    // Thinking is only searched when requested.
+    let th_default = powers()
+        .args(["search", "zorpthink", "--project", "/batch/a", "-C", "0"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&th_default)),
+        0,
+        "thinking matched by default"
+    );
+    let th = powers()
+        .args([
+            "search",
+            "zorpthink",
+            "--in",
+            "thinking",
+            "--project",
+            "/batch/a",
+            "-C",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        match_lines(stdout(&th)),
+        1,
+        "thinking match missing: {}",
+        stdout(&th)
+    );
+}
+
+#[test]
+fn search_unknown_in_kind_errors() {
+    let out = powers()
+        .args(["search", "x", "--in", "bogus", "--project", "/batch/a"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("unknown --in kind"),
+        "expected kind error: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn search_excludes_meta_rows() {
     let out = powers()
         .args([

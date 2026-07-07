@@ -203,10 +203,11 @@ pub fn parse_copilot_event_pub(record: &Value) -> Option<Message> {
 
             if let Some(requests) = data["toolRequests"].as_array() {
                 for req in requests {
+                    let id = req["id"].as_str().map(|s| s.to_string());
                     let name = req["name"].as_str().unwrap_or("").to_string();
                     let input = req["arguments"].to_string();
                     if !name.is_empty() {
-                        parts.push(ContentPart::ToolCall { name, input });
+                        parts.push(ContentPart::ToolCall { id, name, input });
                     }
                 }
             }
@@ -238,6 +239,7 @@ pub fn parse_copilot_event_pub(record: &Value) -> Option<Message> {
                 content: MessageContent::Parts(vec![ContentPart::ToolResult {
                     tool_use_id,
                     content,
+                    is_error: false,
                 }]),
                 timestamp,
             })
@@ -304,6 +306,7 @@ mod tests {
                     ContentPart::ToolResult {
                         tool_use_id,
                         content,
+                        ..
                     } => {
                         assert_eq!(tool_use_id, "tooluse_abc123");
                         assert_eq!(content, "file.txt\nother.txt");

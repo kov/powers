@@ -294,9 +294,10 @@ fn parse_claude_content_part(part: &Value) -> Option<ContentPart> {
             Some(ContentPart::Thinking(text))
         }
         "tool_use" => {
+            let id = part["id"].as_str().map(|s| s.to_string());
             let name = part["name"].as_str().unwrap_or("").to_string();
             let input = serde_json::to_string(&part["input"]).unwrap_or_default();
-            Some(ContentPart::ToolCall { name, input })
+            Some(ContentPart::ToolCall { id, name, input })
         }
         "tool_result" => {
             let tool_use_id = part["tool_use_id"].as_str().unwrap_or("").to_string();
@@ -309,9 +310,11 @@ fn parse_claude_content_part(part: &Value) -> Option<ContentPart> {
                     .join("\n"),
                 other => serde_json::to_string(other).unwrap_or_default(),
             };
+            let is_error = part["is_error"].as_bool().unwrap_or(false);
             Some(ContentPart::ToolResult {
                 tool_use_id,
                 content,
+                is_error,
             })
         }
         _ => None,
@@ -431,9 +434,11 @@ mod tests {
             ContentPart::ToolResult {
                 tool_use_id,
                 content,
+                is_error,
             } => {
                 assert_eq!(tool_use_id, "toolu_abc");
                 assert_eq!(content, "simple output");
+                assert!(!is_error);
             }
             _ => panic!("expected ToolResult"),
         }
@@ -470,8 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_result_with_is_error_true_still_parses() {
-        // is_error is not currently stored in ContentPart, but the record must parse.
+    fn test_tool_result_with_is_error_true_is_captured() {
         let record = make_user_record_with_content(
             r#"[{"type":"tool_result","tool_use_id":"toolu_err","content":"Approval required: rm -rf /","is_error":true}]"#,
         );
@@ -480,9 +484,11 @@ mod tests {
             ContentPart::ToolResult {
                 tool_use_id,
                 content,
+                is_error,
             } => {
                 assert_eq!(tool_use_id, "toolu_err");
                 assert!(content.contains("Approval required"));
+                assert!(is_error, "is_error should be captured from the record");
             }
             _ => panic!("expected ToolResult"),
         }
@@ -528,6 +534,7 @@ mod tests {
             ContentPart::ToolResult {
                 tool_use_id,
                 content,
+                ..
             } => {
                 assert_eq!(tool_use_id, "toolu_a");
                 assert_eq!(content, "small output");
@@ -538,6 +545,7 @@ mod tests {
             ContentPart::ToolResult {
                 tool_use_id,
                 content,
+                ..
             } => {
                 assert_eq!(tool_use_id, "toolu_b");
                 assert!(content.contains("<persisted-output>"));

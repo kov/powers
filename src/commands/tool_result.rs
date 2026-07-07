@@ -31,6 +31,7 @@ pub fn run(args: &ToolResultArgs) -> Result<()> {
                     if let ContentPart::ToolResult {
                         tool_use_id,
                         content,
+                        ..
                     } = part
                         && tool_use_id == args.tool_use_id
                     {
