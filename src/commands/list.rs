@@ -105,9 +105,31 @@ pub fn run(args: &ListArgs) -> Result<()> {
                 output::print_list_row_tsv(s);
             }
         }
+        OutputFormat::Json => {
+            let doc = crate::response::ListJson {
+                sessions: sessions.iter().map(session_json).collect(),
+            };
+            output::print_json(&doc)?;
+        }
     }
 
     Ok(())
+}
+
+fn session_json(s: &SessionMeta) -> crate::response::SessionJson {
+    crate::response::SessionJson {
+        session_id: s.id.clone(),
+        tool: s.tool.to_string(),
+        project: s
+            .project_path
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        git_branch: s.git_branch.clone(),
+        last_activity: output::format_datetime(&s.last_activity),
+        message_count: s.message_count,
+        title: s.title.clone(),
+        last_prompt: s.last_prompt.clone(),
+    }
 }
 
 fn project_matches(project_path: &Option<PathBuf>, filter: &PathBuf) -> bool {

@@ -946,6 +946,69 @@ fn search_snippet_centers_on_buried_match() {
 }
 
 #[test]
+fn list_format_json_is_valid() {
+    let out = powers()
+        .args(["list", "--project", "/batch/a", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_str(stdout(&out)).expect("valid JSON");
+    let sessions = v["sessions"].as_array().unwrap();
+    assert!(!sessions.is_empty());
+    assert!(
+        sessions
+            .iter()
+            .any(|s| s["title"] == "Batch A Golden Session")
+    );
+    assert!(sessions[0]["session_id"].is_string());
+}
+
+#[test]
+fn search_format_json_carries_attribution() {
+    let out = powers()
+        .args([
+            "search",
+            "zorpresult",
+            "--in",
+            "tool_result",
+            "--project",
+            "/batch/a",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_str(stdout(&out)).expect("valid JSON");
+    assert_eq!(v["meta"]["total_matches"], 1);
+    let hit = &v["results"][0]["hits"][0];
+    assert_eq!(hit["matched_in"], "tool_result");
+    assert_eq!(hit["tool"], "Bash");
+    assert!(hit["snippet"].as_str().unwrap().contains("zorpresult"));
+}
+
+#[test]
+fn show_format_json_has_blocks() {
+    let out = powers()
+        .args(["show", "cafe0004", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "show json failed: {}", stderr(&out));
+    let v: serde_json::Value = serde_json::from_str(stdout(&out)).expect("valid JSON");
+    assert_eq!(v["session_id"], "cafe0004-0000-0000-0000-000000000004");
+    let types: Vec<&str> = v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|m| m["blocks"].as_array().unwrap())
+        .map(|b| b["type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"thinking"));
+    assert!(types.contains(&"tool_use"));
+    assert!(types.contains(&"tool_result"));
+}
+
+#[test]
 fn search_default_excludes_tool_result() {
     let out = powers()
         .args([

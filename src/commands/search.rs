@@ -78,6 +78,23 @@ impl MatchSpec {
         Ok(spec)
     }
 
+    /// The selected kinds as names, for JSON metadata.
+    fn kind_names(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        for (on, name) in [
+            (self.user, "user"),
+            (self.assistant, "assistant"),
+            (self.thinking, "thinking"),
+            (self.tool_use, "tool_use"),
+            (self.tool_result, "tool_result"),
+        ] {
+            if on {
+                v.push(name.to_string());
+            }
+        }
+        v
+    }
+
     fn tool_name_allowed(&self, name: Option<&str>) -> bool {
         if self.tool_names.is_empty() {
             return true;
@@ -110,6 +127,10 @@ pub fn run(args: &SearchArgs) -> Result<()> {
     // Phase 1: discover and filter by tool/project/time using only SessionMeta
     let all_sessions = discover_filtered(&config, args)?;
 
+    if args.format == crate::cli::TextFormat::Json {
+        return run_json(&pattern, &spec, args, &all_sessions);
+    }
+
     let mut total_matches = 0usize;
     // uuids that have already produced a match, so the same message reappearing in
     // a resumed/forked session file is not reported twice. Sessions are sorted
@@ -134,6 +155,138 @@ pub fn run(args: &SearchArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// JSON output path: collect hits per session (no context messages) and emit one
+/// structured document. Shares the same matching, dedup, and attribution logic.
+fn run_json(
+    pattern: &Regex,
+    spec: &MatchSpec,
+    args: &SearchArgs,
+    sessions: &[SessionMeta],
+) -> Result<()> {
+    use crate::response::{SearchJson, SearchMetaJson, SessionHitsJson};
+
+    let mut seen_uuids: HashSet<String> = HashSet::new();
+    let mut total_matches = 0usize;
+    let mut results: Vec<SessionHitsJson> = Vec::new();
+
+    for meta in sessions {
+        if total_matches >= args.max_matches {
+            break;
+        }
+        let hits = collect_hits(
+            meta,
+            pattern,
+            spec,
+            args,
+            &mut total_matches,
+            &mut seen_uuids,
+        )?;
+        if !hits.is_empty() {
+            results.push(SessionHitsJson {
+                session_id: meta.id.clone(),
+                tool: meta.tool.to_string(),
+                project: meta
+                    .project_path
+                    .as_deref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                last_activity: output::format_datetime(&meta.last_activity),
+                hits,
+            });
+        }
+    }
+
+    let doc = SearchJson {
+        meta: SearchMetaJson {
+            query: args.pattern.clone(),
+            regex: args.regex,
+            kinds: spec.kind_names(),
+            total_matches,
+            sessions_matched: results.len(),
+        },
+        results,
+    };
+    output::print_json(&doc)
+}
+
+/// Collect matching hits for one session as JSON records (no surrounding context).
+fn collect_hits(
+    meta: &SessionMeta,
+    pattern: &Regex,
+    spec: &MatchSpec,
+    args: &SearchArgs,
+    total_matches: &mut usize,
+    seen_uuids: &mut HashSet<String>,
+) -> Result<Vec<crate::response::HitJson>> {
+    let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
+    let mut hits = Vec::new();
+
+    if meta.tool == Tool::Gemini {
+        let session = GeminiParser::new(&Config::load()).load(meta)?;
+        for msg in &session.messages {
+            if *total_matches >= args.max_matches {
+                break;
+            }
+            record_tool_calls(msg, &mut tool_map);
+            if let Some(hit) = match_message(msg, pattern, spec, &tool_map) {
+                hits.push(hit_json(msg, &hit));
+                *total_matches += 1;
+            }
+        }
+        return Ok(hits);
+    }
+
+    let file = match std::fs::File::open(&meta.file_path) {
+        Ok(f) => f,
+        Err(_) => return Ok(hits),
+    };
+    let mut lines = BufReader::new(file).lines();
+    lines.next(); // skip header line
+    let mut msg_index = 0usize;
+    for line in lines {
+        if *total_matches >= args.max_matches {
+            break;
+        }
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((mut msg, uuid)) = parse_jsonl_message(line, &meta.tool) else {
+            continue;
+        };
+        msg.index = msg_index;
+        msg_index += 1;
+        record_tool_calls(&msg, &mut tool_map);
+        let Some(hit) = match_message(&msg, pattern, spec, &tool_map) else {
+            continue;
+        };
+        // Cross-file dedup by uuid (record on first, newest match).
+        if let Some(u) = uuid
+            && !seen_uuids.insert(u)
+        {
+            continue;
+        }
+        hits.push(hit_json(&msg, &hit));
+        *total_matches += 1;
+    }
+    Ok(hits)
+}
+
+fn hit_json(msg: &Message, hit: &Hit) -> crate::response::HitJson {
+    crate::response::HitJson {
+        index: msg.index,
+        role: msg.role.to_string(),
+        timestamp: msg.timestamp.as_ref().map(output::format_datetime),
+        matched_in: hit.matched_in.to_string(),
+        tool: hit.tool.clone(),
+        tool_input: hit.tool_input.clone(),
+        is_error: hit.is_error,
+        snippet: hit.snippet.clone(),
+        match_count: hit.match_count,
+        full_length: hit.full_length,
+    }
 }
 
 fn discover_filtered(config: &Config, args: &SearchArgs) -> Result<Vec<SessionMeta>> {

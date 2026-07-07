@@ -5,6 +5,7 @@ mod config;
 mod output;
 mod parsers;
 mod persisted;
+mod response;
 mod session;
 mod util;
 

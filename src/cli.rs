@@ -104,6 +104,10 @@ pub struct SearchArgs {
     #[arg(long)]
     pub session_only: bool,
 
+    /// Output format: human text (default) or a JSON document
+    #[arg(long, default_value = "text", value_enum)]
+    pub format: TextFormat,
+
     /// Block kinds to search, comma-separated: user, assistant, thinking,
     /// tool_use, tool_result (plus shorthands `prose` = user,assistant and `all`).
     /// Defaults to user,assistant.
@@ -165,6 +169,10 @@ pub struct ShowArgs {
     /// instead of the default single-line truncated JSON preview
     #[arg(long)]
     pub expand_tool_calls: bool,
+
+    /// Output format: human text (default) or a JSON document
+    #[arg(long, default_value = "text", value_enum)]
+    pub format: TextFormat,
 }
 
 #[derive(clap::Args)]
@@ -378,10 +386,18 @@ pub enum ToolFilter {
     Copilot,
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum OutputFormat {
     Table,
     Tsv,
+    Json,
+}
+
+/// Output format for commands that render human text or a JSON document.
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum TextFormat {
+    Text,
+    Json,
 }
 
 #[derive(ValueEnum, Clone, Debug)]

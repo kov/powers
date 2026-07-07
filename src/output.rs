@@ -488,6 +488,12 @@ pub fn print_inbox_message_json(msg: &StreamMessage) {
     }
 }
 
+/// Serialize a value as pretty JSON to stdout (for `--format json`).
+pub fn print_json<T: serde::Serialize>(value: &T) -> anyhow::Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
 /// Print an error message to stderr.
 pub fn print_error(msg: &str) {
     eprintln!("error: {}", msg);

@@ -1,13 +1,16 @@
 use anyhow::Result;
 
-use crate::cli::{RoleFilter, ShowArgs};
+use crate::cli::{RoleFilter, ShowArgs, TextFormat};
 use crate::config::Config;
 use crate::output;
 use crate::output::MessageRenderOptions;
 use crate::parsers::{
     Parser, claude::ClaudeParser, codex::CodexParser, copilot::CopilotParser, gemini::GeminiParser,
 };
-use crate::session::{Role, Session};
+use crate::persisted::parse_persisted_output_ref;
+use crate::response::{BlockJson, ShowJson, TurnJson};
+use crate::session::{ContentPart, Message, MessageContent, Role, Session};
+use crate::util;
 
 use super::info::{discover_all, resolve_session_meta};
 
@@ -61,6 +64,27 @@ pub fn run(args: &ShowArgs) -> Result<()> {
     let total = messages.len();
     let (start, end) = compute_slice(args, total);
 
+    if args.format == TextFormat::Json {
+        let doc = ShowJson {
+            session_id: meta.id.clone(),
+            tool: meta.tool.to_string(),
+            project: meta
+                .project_path
+                .as_deref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            git_branch: meta.git_branch.clone(),
+            message_count: meta.message_count,
+            from: start,
+            to: end.saturating_sub(1),
+            total,
+            messages: messages[start..end]
+                .iter()
+                .map(|(msg, content)| turn_json(msg, content))
+                .collect(),
+        };
+        return output::print_json(&doc);
+    }
+
     output::print_show_header(meta, start, end.saturating_sub(1), total);
     println!();
 
@@ -75,6 +99,48 @@ pub fn run(args: &ShowArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Convert a message into its JSON turn representation, tagging each block and
+/// surfacing persisted-output metadata for tool results.
+fn turn_json(msg: &Message, content: &MessageContent) -> TurnJson {
+    let blocks = match content {
+        MessageContent::Text(s) => vec![BlockJson::Text { text: s.clone() }],
+        MessageContent::Parts(parts) => parts.iter().map(block_json).collect(),
+    };
+    TurnJson {
+        index: msg.index,
+        role: msg.role.to_string(),
+        timestamp: msg.timestamp.as_ref().map(output::format_datetime),
+        blocks,
+    }
+}
+
+fn block_json(part: &ContentPart) -> BlockJson {
+    match part {
+        ContentPart::Text(t) => BlockJson::Text { text: t.clone() },
+        ContentPart::Thinking(t) => BlockJson::Thinking { text: t.clone() },
+        ContentPart::ToolCall { id, name, input } => BlockJson::ToolUse {
+            id: id.clone(),
+            name: name.clone(),
+            input: input.clone(),
+            summary: util::summarize_tool_input(name, input),
+        },
+        ContentPart::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => {
+            let persisted = parse_persisted_output_ref(content);
+            BlockJson::ToolResult {
+                tool_use_id: tool_use_id.clone(),
+                is_error: *is_error,
+                persisted_path: persisted.as_ref().map(|p| p.path.display().to_string()),
+                persisted_size: persisted.as_ref().and_then(|p| p.declared_size.clone()),
+                content: content.clone(),
+            }
+        }
+    }
 }
 
 /// Returns (start_inclusive, end_exclusive) indices into the filtered message list.
