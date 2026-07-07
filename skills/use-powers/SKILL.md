@@ -12,10 +12,10 @@ without blowing up your context window.
 ## Quick-Reference
 
 ```
-powers list    [--tool claude|codex|gemini|copilot] [--project PATH] [--since YYYY-MM-DD] [--limit N] [--format table|tsv]
-powers search  <PATTERN> [--tool ...] [--project ...] [--since ...] [--context N] [--max-matches N] [--case-sensitive] [--session-only] [--include-tool-calls]
+powers list    [--tool claude|codex|gemini|copilot] [--project PATH] [--since 7d|YYYY-MM-DD] [--until ...] [--limit N] [--format table|tsv|json]
+powers search  <PATTERN> [--regex] [--tool ...] [--project ...] [--since 7d|...] [--until ...] [--exclude-session ID] [--in KINDS] [--tool-name NAME] [--context N] [--max-matches N] [--case-sensitive] [--session-only] [--format text|json]
 powers info    <SESSION>
-powers show    <SESSION> [--last N] [--first N] [--from N] [--to N] [--role user|assistant|all] [--no-tool-calls] [--expand-tool-calls] [--width N]
+powers show    <SESSION> [--last N] [--first N] [--from N] [--to N] [--role user|assistant|all] [--no-tool-calls] [--expand-tool-calls] [--width N] [--format text|json]
 ```
 
 `SESSION` is a UUID prefix of at least 8 characters. Powers warns if ambiguous.
@@ -146,27 +146,36 @@ read what changed, while keeping the slice small enough to stay in context.
 
 ## Example: Recovering Code You Wrote in a Previous Session
 
-If you wrote a function (or any other code) in a past session and want to find
-it, plain `search` won't match — it scans only prose and thinking, not tool-call
-inputs like `Edit.new_string` or `Write.content`. Pass `--include-tool-calls`:
+By default `search` scans only prose (`user` + `assistant` text). To match other
+block kinds, pass `--in` with a comma-separated list of
+`user,assistant,thinking,tool_use,tool_result` (shorthands: `prose`, `all`).
 
 ```bash
-# 1. Find which session + message contains the function
-powers search "fn gadgets_persist_through" --include-tool-calls --context 0 --session-only
-# → 290829a8-b9b2-4f58-9a80-5b2e2ef42575
+# Find code you wrote (searches tool-call inputs like Edit.new_string):
+powers search "fn gadgets_persist_through" --in tool_use --context 0
+# → [msg 368 / assistant / ...] in tool_use [Edit: src/gadgets.rs] (1 match, ...)
 
-powers search "fn gadgets_persist_through" --include-tool-calls --context 0
-# → [msg 368 / assistant / ...]
+# Find what a failing command printed (searches tool OUTPUT):
+powers search "error[E0425]" --in tool_result
+# → ... in tool_result [Bash: cargo check ...] (2 matches, 3242 chars)
 
-# 2. Expand the full diff for that message
+# Restrict tool matches to a specific tool:
+powers search "SYS_sendfile" --in tool_result --tool-name Bash
+
+# Expand the full diff for a hit:
 powers show 290829a8 --from 368 --to 368 --expand-tool-calls
 ```
 
-`--include-tool-calls` searches against the raw JSON of each tool call, so
-regexes that span newlines won't work cleanly (JSON-escaped `\n` is two literal
-characters, not whitespace). Stick to identifier-style patterns. Tool *results*
-(command output, file reads) are still excluded — they would drown the signal
-in log noise.
+`tool_result` hits are attributed to the tool call that produced them (name +
+one-line input), and errored results are flagged. `--include-tool-calls` is a
+deprecated alias for `--in tool_use`.
+
+Notes: the query is a **literal substring** by default — pass `--regex` for a
+regular expression (so `foo(bar)` or `a[0]` match literally). Injected
+`<system-reminder>` blocks are stripped before matching. Add `--format json` to
+any of `search`/`show`/`list` for a machine-readable document (search hits carry
+`matched_in`, `tool`, `snippet`, `match_count`; show blocks are typed and expose
+persisted-output paths).
 
 ## Example: Continuing Another Agent's Work
 

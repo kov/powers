@@ -27,6 +27,12 @@ into memory when a streaming approach is possible:
 
 The `Session` struct is for full loads (show command only). Search must stream.
 
+One deliberate exception: to attribute a `tool_result` hit back to the tool that
+produced it (`--in tool_result`), search keeps a per-session `tool_map`
+(`tool_use_id → name+summary`) that grows with the number of tool calls in the
+session. It resets per session and holds only short summaries, so it stays small,
+but it is O(tool_use blocks), not O(1).
+
 ## Code Conventions
 
 - `anyhow::Result` everywhere — no custom error types
@@ -149,6 +155,7 @@ powers log -f --project PATH    # follow in-place, refreshes as cursors advance
 **Codex new**: `{type:"response_item", payload:{type:"message", role, content:[...]}}`
 **Gemini**: `{type:"user"|"gemini", content: string|[{text}], toolCalls?:[...]}`
 **Copilot user**: `{type:"user.message", data:{content}, timestamp}`
-**Copilot assistant**: `{type:"assistant.message", data:{content, toolRequests:[{name,arguments}]}, timestamp}`
+**Copilot assistant**: `{type:"assistant.message", data:{content, toolRequests:[{toolCallId,name,arguments}]}, timestamp}`
+**Copilot tool result**: `{type:"tool.execution_complete", data:{toolCallId, success, result:{content}}, timestamp}` (`success:false` → is_error)
 
 Copilot metadata is in `workspace.yaml` alongside `events.jsonl`; sessions predating v0.0.416 have only `workspace.yaml` (no message content).
