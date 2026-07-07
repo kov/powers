@@ -63,6 +63,9 @@ pub fn run(args: &ShowArgs) -> Result<()> {
     // Determine slice
     let total = messages.len();
     let (start, end) = compute_slice(args, total);
+    // Guard against an inverted range (e.g. --from 5 --to 2), which would panic
+    // the slice below; an empty window is the sensible result.
+    let end = end.max(start);
 
     if args.format == TextFormat::Json {
         let doc = ShowJson {
