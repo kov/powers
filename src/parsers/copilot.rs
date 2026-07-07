@@ -203,7 +203,7 @@ pub fn parse_copilot_event_pub(record: &Value) -> Option<Message> {
 
             if let Some(requests) = data["toolRequests"].as_array() {
                 for req in requests {
-                    let id = req["id"].as_str().map(|s| s.to_string());
+                    let id = req["toolCallId"].as_str().map(|s| s.to_string());
                     let name = req["name"].as_str().unwrap_or("").to_string();
                     let input = req["arguments"].to_string();
                     if !name.is_empty() {
@@ -233,13 +233,15 @@ pub fn parse_copilot_event_pub(record: &Value) -> Option<Message> {
                 Value::String(s) => s.clone(),
                 _ => String::new(),
             };
+            // `success` is present and true on ok results; treat missing as ok.
+            let is_error = !data["success"].as_bool().unwrap_or(true);
             Some(Message {
                 index: 0,
                 role: Role::User,
                 content: MessageContent::Parts(vec![ContentPart::ToolResult {
                     tool_use_id,
                     content,
-                    is_error: false,
+                    is_error,
                 }]),
                 timestamp,
             })
@@ -280,6 +282,34 @@ mod tests {
         assert_eq!(msg.role, Role::Assistant);
         let text = msg.content.without_tool_calls();
         assert!(!text.is_empty());
+        // The tool_use id (toolCallId) must be captured for tool_result attribution.
+        match &msg.content {
+            MessageContent::Parts(parts) => {
+                let has_id = parts
+                    .iter()
+                    .any(|p| matches!(p, ContentPart::ToolCall { id: Some(id), .. } if id == "x"));
+                assert!(has_id, "toolCallId should populate ToolCall.id");
+            }
+            _ => panic!("expected Parts"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_execution_complete_failure_sets_is_error() {
+        let record: Value = serde_json::from_str(
+            r#"{"type":"tool.execution_complete","data":{"toolCallId":"tooluse_err","success":false,"result":{"content":"boom"}},"timestamp":"2026-02-24T21:02:00Z","id":"z"}"#,
+        )
+        .unwrap();
+        let msg = parse_copilot_event_pub(&record).unwrap();
+        match &msg.content {
+            MessageContent::Parts(parts) => match &parts[0] {
+                ContentPart::ToolResult { is_error, .. } => {
+                    assert!(is_error, "success:false must set is_error");
+                }
+                _ => panic!("expected ToolResult"),
+            },
+            _ => panic!("expected Parts"),
+        }
     }
 
     #[test]
