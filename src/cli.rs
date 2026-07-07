@@ -137,13 +137,21 @@ pub struct ShowArgs {
     #[arg(long)]
     pub first: Option<usize>,
 
-    /// Show messages from index N (inclusive)
+    /// Show messages from this message index (inclusive)
     #[arg(long)]
     pub from: Option<usize>,
 
-    /// Show messages to index N (inclusive)
+    /// Show messages up to this message index (inclusive)
     #[arg(long)]
     pub to: Option<usize>,
+
+    /// Center the view on message index N (use with -C); sugar for --from N-C --to N+C
+    #[arg(long)]
+    pub around: Option<usize>,
+
+    /// Messages of context on each side of --around
+    #[arg(long, short = 'C', default_value = "3")]
+    pub context: usize,
 
     /// Filter by role
     #[arg(long, default_value = "all", value_enum)]

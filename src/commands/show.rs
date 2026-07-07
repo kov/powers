@@ -60,12 +60,18 @@ pub fn run(args: &ShowArgs) -> Result<()> {
             .collect()
     };
 
-    // Determine slice
+    // Determine slice (positions into the filtered list).
     let total = messages.len();
-    let (start, end) = compute_slice(args, total);
+    let (start, end) = compute_slice(args, &messages);
     // Guard against an inverted range (e.g. --from 5 --to 2), which would panic
     // the slice below; an empty window is the sensible result.
     let end = end.max(start);
+    // Display the original message-index range actually shown.
+    let (disp_from, disp_to) = if start < end {
+        (messages[start].0.index, messages[end - 1].0.index)
+    } else {
+        (0, 0)
+    };
 
     if args.format == TextFormat::Json {
         let doc = ShowJson {
@@ -77,8 +83,8 @@ pub fn run(args: &ShowArgs) -> Result<()> {
                 .map(|p| p.to_string_lossy().into_owned()),
             git_branch: meta.git_branch.clone(),
             message_count: meta.message_count,
-            from: start,
-            to: end.saturating_sub(1),
+            from: disp_from,
+            to: disp_to,
             total,
             messages: messages[start..end]
                 .iter()
@@ -88,7 +94,7 @@ pub fn run(args: &ShowArgs) -> Result<()> {
         return output::print_json(&doc);
     }
 
-    output::print_show_header(meta, start, end.saturating_sub(1), total);
+    output::print_show_header(meta, disp_from, disp_to, total);
     println!();
 
     for (msg, content) in &messages[start..end] {
@@ -146,25 +152,29 @@ fn block_json(part: &ContentPart) -> BlockJson {
     }
 }
 
-/// Returns (start_inclusive, end_exclusive) indices into the filtered message list.
-fn compute_slice(args: &ShowArgs, total: usize) -> (usize, usize) {
-    if let (Some(from), Some(to)) = (args.from, args.to) {
-        let start = from.min(total);
-        let end = (to + 1).min(total);
-        return (start, end);
+/// Returns (start_inclusive, end_exclusive) positions into the filtered message
+/// list. `--from/--to/--around` address by original message index (`msg.index`),
+/// so they stay stable under `--role`; `--first/--last` are positional.
+fn compute_slice(args: &ShowArgs, messages: &[(&Message, MessageContent)]) -> (usize, usize) {
+    let total = messages.len();
+    // First position whose index is >= target, and first whose index is > target.
+    let lower = |target: usize| messages.partition_point(|(m, _)| m.index < target);
+    let upper = |target: usize| messages.partition_point(|(m, _)| m.index <= target);
+
+    if let Some(center) = args.around {
+        let lo = center.saturating_sub(args.context);
+        let hi = center.saturating_add(args.context);
+        return (lower(lo), upper(hi));
     }
 
-    if let Some(from) = args.from {
-        return (from.min(total), total);
-    }
-
-    if let Some(to) = args.to {
-        return (0, (to + 1).min(total));
+    if args.from.is_some() || args.to.is_some() {
+        let start = args.from.map(lower).unwrap_or(0);
+        let end = args.to.map(upper).unwrap_or(total);
+        return (start, end.max(start));
     }
 
     if let Some(last) = args.last {
-        let start = total.saturating_sub(last);
-        return (start, total);
+        return (total.saturating_sub(last), total);
     }
 
     if let Some(first) = args.first {
