@@ -116,9 +116,14 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
     let mut count = 0usize;
     let mut title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
+    // Track the previous assistant row's message.id so consecutive streamed rows
+    // sharing an id count as one logical turn (matching load_session / search).
+    let mut last_asst_id: Option<String> = None;
     for line in remaining.lines() {
         let line = line.unwrap_or_default();
-        if line.contains(r#""type":"user""#) || line.contains(r#""type":"assistant""#) {
+        let is_asst = line.contains(r#""type":"assistant""#);
+        let is_user = !is_asst && line.contains(r#""type":"user""#);
+        if is_asst || is_user {
             // Only parse the rare lines that mention isMeta, and check the real
             // top-level bool — so a message whose *content* quotes "isMeta":true
             // is not miscounted (must match load_session / search exactly).
@@ -129,6 +134,16 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
                     == Some(true)
             {
                 continue;
+            }
+            if is_asst {
+                let id = extract_message_id(&line).map(str::to_string);
+                // Continuation of the same streamed turn: don't count again.
+                if id.is_some() && id == last_asst_id {
+                    continue;
+                }
+                last_asst_id = id;
+            } else {
+                last_asst_id = None;
             }
             count += 1;
         } else if line.contains(r#""type":"ai-title""#)
@@ -158,13 +173,24 @@ fn discover_session(path: &PathBuf) -> Result<SessionMeta> {
     })
 }
 
+/// Cheaply extract the assistant `message.id` (`msg_…`) from a raw JSONL line.
+/// The message object's id precedes its content, so the first occurrence is it.
+fn extract_message_id(line: &str) -> Option<&str> {
+    const KEY: &str = r#""id":"msg_"#;
+    let at = line.find(KEY)? + r#""id":""#.len();
+    let rest = &line[at..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
 fn load_session(meta: &SessionMeta) -> Result<Session> {
     let file = std::fs::File::open(&meta.file_path)
         .with_context(|| format!("Cannot open {}", meta.file_path.display()))?;
     let reader = BufReader::new(file);
 
+    // Merge streamed assistant rows sharing a message.id into one logical turn.
+    let mut merger = crate::merge::Merger::new();
     let mut messages = Vec::new();
-    let mut index = 0usize;
 
     for line in reader.lines() {
         let line = line?;
@@ -189,14 +215,14 @@ fn load_session(meta: &SessionMeta) -> Result<Session> {
             continue;
         }
 
-        let (role, content, timestamp) = match record_type {
+        let (role, content, timestamp, message_id) = match record_type {
             "user" => {
                 let msg = &record["message"];
                 let content = parse_claude_user_content(&msg["content"]);
                 let ts = record["timestamp"]
                     .as_str()
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok());
-                (Role::User, content, ts)
+                (Role::User, content, ts, None)
             }
             "assistant" => {
                 let msg = &record["message"];
@@ -204,18 +230,25 @@ fn load_session(meta: &SessionMeta) -> Result<Session> {
                 let ts = record["timestamp"]
                     .as_str()
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok());
-                (Role::Assistant, content, ts)
+                let id = msg["id"].as_str().map(|s| s.to_string());
+                (Role::Assistant, content, ts, id)
             }
             _ => continue,
         };
 
-        messages.push(Message {
-            index,
+        let uuid = record["uuid"].as_str().map(|s| s.to_string());
+        let msg = Message {
+            index: 0,
             role,
             content,
             timestamp,
-        });
-        index += 1;
+        };
+        if let Some((finished, _)) = merger.push(msg, uuid, message_id) {
+            messages.push(finished);
+        }
+    }
+    if let Some((finished, _)) = merger.finish() {
+        messages.push(finished);
     }
 
     Ok(Session { messages })

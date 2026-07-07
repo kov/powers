@@ -2,6 +2,7 @@ mod cli;
 mod collab;
 mod commands;
 mod config;
+mod merge;
 mod output;
 mod parsers;
 mod persisted;

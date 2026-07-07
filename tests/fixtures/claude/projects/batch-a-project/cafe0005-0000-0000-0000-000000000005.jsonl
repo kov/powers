@@ -1,0 +1,6 @@
+{"type":"system","sessionId":"cafe0005-0000-0000-0000-000000000005","cwd":"/batch/c","gitBranch":"main","timestamp":"2026-07-04T10:00:00.000Z","uuid":"sys-5"}
+{"type":"user","message":{"role":"user","content":"kick off the streamtask please"},"uuid":"u-c5-0","timestamp":"2026-07-04T10:01:00.000Z","sessionId":"cafe0005-0000-0000-0000-000000000005"}
+{"type":"assistant","message":{"id":"msg_stream1","role":"assistant","content":[{"type":"thinking","thinking":"planning the streamplan step"}]},"uuid":"a-c5-1","timestamp":"2026-07-04T10:02:00.000Z","sessionId":"cafe0005-0000-0000-0000-000000000005"}
+{"type":"assistant","message":{"id":"msg_stream1","role":"assistant","content":[{"type":"text","text":"here is the answer with streammarker inside"}]},"uuid":"a-c5-2","timestamp":"2026-07-04T10:02:01.000Z","sessionId":"cafe0005-0000-0000-0000-000000000005"}
+{"type":"assistant","message":{"id":"msg_stream1","role":"assistant","content":[{"type":"tool_use","id":"toolu_c5","name":"Bash","input":{"command":"echo streamcmd"}}]},"uuid":"a-c5-3","timestamp":"2026-07-04T10:02:02.000Z","sessionId":"cafe0005-0000-0000-0000-000000000005"}
+{"type":"user","message":{"role":"user","content":"thanks, all done"},"uuid":"u-c5-4","timestamp":"2026-07-04T10:03:00.000Z","sessionId":"cafe0005-0000-0000-0000-000000000005"}

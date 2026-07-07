@@ -65,6 +65,10 @@ pub struct HitJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<String>,
     pub matched_in: String,
+    /// The initiating user prompt this hit falls under (most recent user prose
+    /// at or before it), truncated. Helps judge relevance without a follow-up read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

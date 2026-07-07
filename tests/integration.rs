@@ -330,8 +330,10 @@ fn search_context_zero_shows_match_only() {
     let s = stdout(&out);
     assert!(out.status.success());
     assert!(s.contains("citrus"), "match missing: {s}");
-    // No surrounding messages
-    assert!(!s.contains("bananas"), "context leaked: {s}");
+    // No surrounding messages. (The "↳ under:" intent line surfaces the
+    // initiating prompt, so check neighbor message *bodies* don't leak.)
+    assert!(!s.contains("Here are the bananas"), "context leaked: {s}");
+    assert!(!s.contains("banana preview"), "context leaked: {s}");
 }
 
 #[test]
@@ -943,6 +945,130 @@ fn search_snippet_centers_on_buried_match() {
         !s.contains("filler line 01"),
         "snippet should be centered on the match, not the message start: {s}"
     );
+}
+
+// ── Batch C: streamed-row merge, addressing, intent ───────────────────────────
+
+#[test]
+fn show_merges_streamed_assistant_rows() {
+    // 3 assistant rows share message.id msg_stream1 → one logical turn (index 1)
+    // carrying thinking + text + tool_use. Total = user, merged-assistant, user.
+    let out = powers()
+        .args(["show", "cafe0005", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "show failed: {}", stderr(&out));
+    let v: serde_json::Value = serde_json::from_str(stdout(&out)).expect("valid JSON");
+    assert_eq!(
+        v["total"], 3,
+        "streamed rows should merge to 3 messages: {v}"
+    );
+    let merged = &v["messages"][1];
+    assert_eq!(merged["role"], "assistant");
+    assert_eq!(merged["index"], 1);
+    let kinds: Vec<&str> = merged["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, vec!["thinking", "text", "tool_use"]);
+}
+
+#[test]
+fn info_count_reflects_merged_rows() {
+    let out = powers().args(["info", "cafe0005"]).output().unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    // Messages: 3 (discover count must match the merged load count)
+    assert!(
+        s.lines()
+            .any(|l| l.starts_with("Messages:") && l.contains("3")),
+        "merged message count wrong: {s}"
+    );
+}
+
+#[test]
+fn search_index_matches_show_after_merge() {
+    // streammarker is in the text block of the merged assistant turn (index 1).
+    let out = powers()
+        .args([
+            "search",
+            "streammarker",
+            "--project",
+            "/batch/c",
+            "--context",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(
+        s.contains("[msg 1 / assistant"),
+        "merged assistant hit should be index 1: {s}"
+    );
+    // The same index resolves in show to the merged turn.
+    let show = powers()
+        .args(["show", "cafe0005", "--from", "1", "--to", "1"])
+        .output()
+        .unwrap();
+    assert!(
+        stdout(&show).contains("streammarker"),
+        "show index mismatch"
+    );
+}
+
+#[test]
+fn search_intent_anchors_to_initiating_prompt() {
+    let out = powers()
+        .args([
+            "search",
+            "streammarker",
+            "--project",
+            "/batch/c",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(stdout(&out)).expect("valid JSON");
+    let hit = &v["results"][0]["hits"][0];
+    assert_eq!(hit["intent"], "kick off the streamtask please");
+}
+
+#[test]
+fn show_around_addresses_by_index() {
+    // --around 1 -C 0 shows only the merged assistant turn at index 1.
+    let out = powers()
+        .args(["show", "cafe0005", "--around", "1", "-C", "0"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(
+        s.contains("[1] assistant"),
+        "around should show index 1: {s}"
+    );
+    assert!(
+        !s.contains("[0]") && !s.contains("[2]"),
+        "around leaked: {s}"
+    );
+}
+
+#[test]
+fn show_from_addresses_by_original_index_under_role() {
+    // aaaaaaaa user msgs are at indices 0,2,4. --role user --from 2 must address
+    // by original index, showing [2] and [4] (not filtered position 2 = [4]).
+    let out = powers()
+        .args(["show", "aaaaaaaa", "--role", "user", "--from", "2"])
+        .output()
+        .unwrap();
+    let s = stdout(&out);
+    assert!(out.status.success());
+    assert!(s.contains("[2]"), "index 2 missing: {s}");
+    assert!(s.contains("[4]"), "index 4 missing: {s}");
+    assert!(!s.contains("[0]"), "index 0 should be excluded: {s}");
 }
 
 #[test]

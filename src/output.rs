@@ -155,6 +155,7 @@ pub fn print_search_match(msg: &Message) {
 pub fn print_search_snippet(
     msg: &Message,
     matched_in: &str,
+    intent: Option<&str>,
     tool: Option<&str>,
     tool_input: Option<&str>,
     is_error: bool,
@@ -187,6 +188,12 @@ pub fn print_search_snippet(
         "[msg {} / {} / {}]{} ({} {}, {} chars)",
         msg.index, msg.role, ts, where_label, match_count, plural, full_length
     );
+    // Anchor non-user hits to the initiating prompt (redundant for user matches).
+    if msg.role != crate::session::Role::User
+        && let Some(intent) = intent
+    {
+        println!("  ↳ under: {}", truncate(intent, 160));
+    }
     for line in snippet.lines() {
         println!("  {}", line);
     }

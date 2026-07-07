@@ -222,15 +222,20 @@ fn collect_hits(
     let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
     let mut hits = Vec::new();
 
+    let mut current_intent: Option<String> = None;
+
     if meta.tool == Tool::Gemini {
         let session = GeminiParser::new(&Config::load()).load(meta)?;
         for msg in &session.messages {
             if *total_matches >= args.max_matches {
                 break;
             }
+            if let Some(i) = intent_of(msg) {
+                current_intent = Some(i);
+            }
             record_tool_calls(msg, &mut tool_map);
             if let Some(hit) = match_message(msg, pattern, spec, &tool_map) {
-                hits.push(hit_json(msg, &hit));
+                hits.push(hit_json(msg, &hit, current_intent.as_deref()));
                 *total_matches += 1;
             }
         }
@@ -243,21 +248,13 @@ fn collect_hits(
     };
     let mut lines = BufReader::new(file).lines();
     lines.next(); // skip header line
-    let mut msg_index = 0usize;
-    for line in lines {
+    for (msg, uuid) in MergedReader::new(lines, meta.tool.clone()) {
         if *total_matches >= args.max_matches {
             break;
         }
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+        if let Some(i) = intent_of(&msg) {
+            current_intent = Some(i);
         }
-        let Some((mut msg, uuid)) = parse_jsonl_message(line, &meta.tool) else {
-            continue;
-        };
-        msg.index = msg_index;
-        msg_index += 1;
         record_tool_calls(&msg, &mut tool_map);
         let Some(hit) = match_message(&msg, pattern, spec, &tool_map) else {
             continue;
@@ -268,18 +265,19 @@ fn collect_hits(
         {
             continue;
         }
-        hits.push(hit_json(&msg, &hit));
+        hits.push(hit_json(&msg, &hit, current_intent.as_deref()));
         *total_matches += 1;
     }
     Ok(hits)
 }
 
-fn hit_json(msg: &Message, hit: &Hit) -> crate::response::HitJson {
+fn hit_json(msg: &Message, hit: &Hit, intent: Option<&str>) -> crate::response::HitJson {
     crate::response::HitJson {
         index: msg.index,
         role: msg.role.to_string(),
         timestamp: msg.timestamp.as_ref().map(output::format_datetime),
         matched_in: hit.matched_in.to_string(),
+        intent: intent.map(|s| s.to_string()),
         tool: hit.tool.clone(),
         tool_input: hit.tool_input.clone(),
         is_error: hit.is_error,
@@ -490,6 +488,28 @@ fn match_message(
     }
 }
 
+/// If `msg` is a user message, return its initiating prose (first text block,
+/// reminders stripped, truncated) to anchor following hits' intent.
+fn intent_of(msg: &Message) -> Option<String> {
+    if msg.role != Role::User {
+        return None;
+    }
+    let text = match &msg.content {
+        MessageContent::Text(s) => s.clone(),
+        MessageContent::Parts(parts) => parts.iter().find_map(|p| match p {
+            ContentPart::Text(t) if !t.trim().is_empty() => Some(t.clone()),
+            _ => None,
+        })?,
+    };
+    let stripped = util::strip_reminders(&text);
+    let stripped = stripped.trim();
+    if stripped.is_empty() {
+        None
+    } else {
+        Some(util::truncate_chars(stripped, 200))
+    }
+}
+
 /// Record a message's tool_use ids so later tool_result blocks can be attributed.
 /// Claude always emits a tool_use before the tool_result that references it, so a
 /// forward pass keeps the map complete. Bounded by tool_use count per session.
@@ -513,11 +533,12 @@ fn record_tool_calls(msg: &Message, tool_map: &mut HashMap<String, (String, Stri
 
 /// Print a message: a match-centered snippet when it matched, else a short
 /// context preview.
-fn print_msg(msg: &Message, hit: Option<&Hit>) {
+fn print_msg(msg: &Message, hit: Option<&Hit>, intent: Option<&str>) {
     match hit {
         Some(h) => output::print_search_snippet(
             msg,
             h.matched_in,
+            intent,
             h.tool.as_deref(),
             h.tool_input.as_deref(),
             h.is_error,
@@ -561,32 +582,25 @@ fn search_jsonl(
     };
 
     let ctx_n = args.context;
-    // pre_ctx: ring buffer of the last `ctx_n` messages before the current line
+    // pre_ctx: ring buffer of the last `ctx_n` messages before the current match
     let mut pre_ctx: VecDeque<Message> = VecDeque::with_capacity(ctx_n + 1);
     // post_ctx_remaining: how many more messages to emit as post-context
     let mut post_ctx_remaining: usize = 0;
     let mut found_in_session = false;
-    // Track the position of each parsed user/assistant message so indices are meaningful
-    let mut msg_index: usize = 0;
     // tool_use id -> (tool name, one-line input summary), for tool_result attribution.
     let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
 
     let mut lines = BufReader::new(file).lines();
     lines.next(); // skip header line (session metadata)
 
-    for line in lines {
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+    // The initiating user prompt for the current run of messages (intent anchor).
+    let mut current_intent: Option<String> = None;
 
-        // Parse only lines that look like user/assistant messages
-        let Some((mut msg, uuid)) = parse_jsonl_message(line, &meta.tool) else {
-            continue;
-        };
-        msg.index = msg_index;
-        msg_index += 1;
+    // Logical messages (streamed assistant rows merged; indices match `show`).
+    for (msg, uuid) in MergedReader::new(lines, meta.tool.clone()) {
+        if let Some(i) = intent_of(&msg) {
+            current_intent = Some(i);
+        }
 
         // Record this message's tool_use ids before matching, so a later
         // tool_result can be attributed back to the tool that produced it.
@@ -607,7 +621,7 @@ fn search_jsonl(
 
         if post_ctx_remaining > 0 {
             if !args.session_only {
-                print_msg(&msg, hit.as_ref());
+                print_msg(&msg, hit.as_ref(), current_intent.as_deref());
             }
             post_ctx_remaining -= 1;
 
@@ -643,7 +657,7 @@ fn search_jsonl(
             }
             pre_ctx.clear();
 
-            print_msg(&msg, hit.as_ref());
+            print_msg(&msg, hit.as_ref(), current_intent.as_deref());
             *total_matches += 1;
 
             if ctx_n == 0 {
@@ -665,22 +679,79 @@ fn search_jsonl(
     Ok(found_in_session)
 }
 
-/// Parse a single JSONL line into a `(Message, uuid)` pair, or None if the line
-/// is not a relevant user/assistant message. The uuid is present only for Claude
-/// (used for cross-file dedup); other tools return None.
+/// Parse a single JSONL line into a `(Message, uuid, message_id)` tuple, or None
+/// if the line is not a relevant user/assistant message. `uuid` and `message_id`
+/// are Claude-only (uuid for cross-file dedup, message_id for streamed-row merge);
+/// other tools return None for both.
 ///
 /// A cheap substring pre-filter avoids JSON parsing for lines that cannot be
 /// messages.
-fn parse_jsonl_message(line: &str, tool: &Tool) -> Option<(Message, Option<String>)> {
+/// Streams logical messages from a JSONL line iterator, merging streamed
+/// assistant rows (Claude) via [`crate::merge::Merger`] and assigning indices —
+/// so search indices match `show`. Non-message lines and torn lines are skipped.
+struct MergedReader<I> {
+    lines: I,
+    tool: Tool,
+    merger: crate::merge::Merger,
+    done: bool,
+}
+
+impl<I: Iterator<Item = std::io::Result<String>>> MergedReader<I> {
+    fn new(lines: I, tool: Tool) -> Self {
+        MergedReader {
+            lines,
+            tool,
+            merger: crate::merge::Merger::new(),
+            done: false,
+        }
+    }
+}
+
+impl<I: Iterator<Item = std::io::Result<String>>> Iterator for MergedReader<I> {
+    type Item = (Message, Option<String>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.lines.next() {
+                Some(Ok(line)) => {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let Some((msg, uuid, message_id)) = parse_jsonl_message(line, &self.tool)
+                    else {
+                        continue;
+                    };
+                    if let Some(finished) = self.merger.push(msg, uuid, message_id) {
+                        return Some(finished);
+                    }
+                }
+                Some(Err(_)) => continue, // torn line: skip
+                None => {
+                    if self.done {
+                        return None;
+                    }
+                    self.done = true;
+                    return self.merger.finish();
+                }
+            }
+        }
+    }
+}
+
+fn parse_jsonl_message(
+    line: &str,
+    tool: &Tool,
+) -> Option<(Message, Option<String>, Option<String>)> {
     match tool {
         Tool::Claude => parse_claude_line(line),
-        Tool::Codex => parse_codex_line(line).map(|m| (m, None)),
-        Tool::Copilot => parse_copilot_line(line).map(|m| (m, None)),
+        Tool::Codex => parse_codex_line(line).map(|m| (m, None, None)),
+        Tool::Copilot => parse_copilot_line(line).map(|m| (m, None, None)),
         _ => None,
     }
 }
 
-fn parse_claude_line(line: &str) -> Option<(Message, Option<String>)> {
+fn parse_claude_line(line: &str) -> Option<(Message, Option<String>, Option<String>)> {
     // Pre-filter: must contain "type":"user" or "type":"assistant"
     let is_user = line.contains("\"type\":\"user\"");
     let is_assistant = line.contains("\"type\":\"assistant\"");
@@ -697,8 +768,9 @@ fn parse_claude_line(line: &str) -> Option<(Message, Option<String>)> {
     }
 
     let uuid = record["uuid"].as_str().map(|s| s.to_string());
+    let message_id = record["message"]["id"].as_str().map(|s| s.to_string());
     use crate::parsers::claude::parse_message_from_record;
-    parse_message_from_record(&record, record_type).map(|m| (m, uuid))
+    parse_message_from_record(&record, record_type).map(|m| (m, uuid, message_id))
 }
 
 fn parse_codex_line(line: &str) -> Option<Message> {
@@ -774,15 +846,19 @@ fn search_gemini(
     let mut post_ctx_remaining: usize = 0;
     let mut found_in_session = false;
     let mut tool_map: HashMap<String, (String, String)> = HashMap::new();
+    let mut current_intent: Option<String> = None;
 
     for msg in &session.messages {
+        if let Some(i) = intent_of(msg) {
+            current_intent = Some(i);
+        }
         record_tool_calls(msg, &mut tool_map);
         let hit = match_message(msg, pattern, spec, &tool_map);
         let is_match = hit.is_some();
 
         if post_ctx_remaining > 0 {
             if !args.session_only {
-                print_msg(msg, hit.as_ref());
+                print_msg(msg, hit.as_ref(), current_intent.as_deref());
             }
             post_ctx_remaining -= 1;
 
@@ -816,7 +892,7 @@ fn search_gemini(
             }
             pre_ctx.clear();
 
-            print_msg(msg, hit.as_ref());
+            print_msg(msg, hit.as_ref(), current_intent.as_deref());
             *total_matches += 1;
 
             if ctx_n == 0 {
